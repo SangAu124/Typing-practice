@@ -275,10 +275,33 @@ const BattleGame: React.FC = () => {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-      timeout: 20000
+      timeout: 20000,
+      withCredentials: true,
+      forceNew: true
     });
 
     setSocket(newSocket);
+
+    // Socket 연결 디버깅
+    newSocket.on('connect', () => {
+      console.log('Socket connected successfully:', newSocket.id);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error details:', {
+        message: error.message,
+        description: error.description,
+        type: error.type
+      });
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected. Reason:', reason);
+      if (reason === 'io server disconnect') {
+        // 서버에서 연결을 끊었을 때 재연결 시도
+        newSocket.connect();
+      }
+    });
 
     if (roomIdParam) {
       newSocket.emit('join-room', { roomId: roomIdParam });
