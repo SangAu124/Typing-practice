@@ -7,28 +7,52 @@ const axios = require('axios');
 const app = express();
 const server = createServer(app);
 
-// CORS 미들웨어 설정
+// CORS 설정 업데이트
+const allowedOrigins = [
+  'https://typing-practice-front-end.vercel.app',
+  'http://localhost:3000',
+  'https://typing-practice-git-main-sangau124.vercel.app',
+  'https://typing-practice-sangau124.vercel.app'
+];
+
 app.use(cors({
-  origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST'],
   credentials: true
 }));
 
 app.use(express.json());
 
-// Socket.IO 서버 설정
+// Socket.IO 서버 설정 최적화
 const io = new Server(server, {
   cors: {
-    origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['*']
   },
-  transports: ['websocket', 'polling'],
-  pingInterval: 5000,
-  pingTimeout: 3000,
-  connectTimeout: 10000,
-  maxHttpBufferSize: 1e6,
+  transports: ['polling', 'websocket'],
   allowUpgrades: true,
+  upgradeTimeout: 10000,
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  connectTimeout: 45000,
+  maxHttpBufferSize: 1e6,
+  allowEIO3: true,
+  path: '/socket.io/',
+  adapter: require('socket.io-adapter')(),
   perMessageDeflate: {
     threshold: 1024
   }

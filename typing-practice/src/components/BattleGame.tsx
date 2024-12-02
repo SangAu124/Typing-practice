@@ -278,14 +278,17 @@ const BattleGame: React.FC<BattleGameProps> = ({ roomId: initialRoomId }) => {
 
     const newSocket = io(SOCKET_SERVER_URL, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       upgrade: true,
       reconnection: true,
       reconnectionAttempts: 5,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 2000,
-      timeout: 5000,
-      autoConnect: true
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      autoConnect: true,
+      path: '/socket.io/',
+      forceNew: true,
+      query: roomIdParam ? { room: roomIdParam } : undefined
     });
 
     setSocket(newSocket);
@@ -299,16 +302,30 @@ const BattleGame: React.FC<BattleGameProps> = ({ roomId: initialRoomId }) => {
 
     // Socket 연결 이벤트
     newSocket.on('connect', () => {
-      console.log('Socket connected, joining/creating room...');
+      console.log('Socket connected successfully');
       setIsConnected(true);
       
-      // 방 생성 또는 참여
       if (roomIdParam) {
+        console.log('Joining room:', roomIdParam);
         newSocket.emit('join-room', { roomId: roomIdParam });
         setRoomId(roomIdParam);
       } else {
+        console.log('Creating new room');
         newSocket.emit('create-room');
       }
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      setIsConnected(false);
+    });
+
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log('Socket reconnected after', attemptNumber, 'attempts');
+    });
+
+    newSocket.on('reconnect_error', (error) => {
+      console.error('Socket reconnection error:', error);
     });
 
     // 방 생성 성공 이벤트
