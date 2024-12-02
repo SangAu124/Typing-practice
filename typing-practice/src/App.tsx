@@ -1,34 +1,61 @@
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import styled from 'styled-components';
 import TypingGame from './components/TypingGame';
+import BattleGame from './components/BattleGame';
 import GlobalStyle from './styles/GlobalStyle';
 
-const AppContainer = styled.div`
+const Container = styled.div`
   min-height: 100vh;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-`;
-
-const Title = styled.h1`
+  background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-size: 2rem;
-  margin-bottom: 2rem;
-  font-weight: 700;
-  letter-spacing: 1px;
 `;
 
-function App() {
+const Nav = styled.nav`
+  padding: 20px;
+  background-color: var(--bg-secondary);
+  margin-bottom: 20px;
+  
+  ul {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    gap: 20px;
+  }
+  
+  a {
+    color: var(--text-primary);
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    
+    &:hover {
+      background-color: var(--accent-secondary);
+    }
+  }
+`;
+
+const App: React.FC = () => {
   return (
-    <>
+    <Router>
       <GlobalStyle />
-      <AppContainer>
-        <Title>타자 연습</Title>
-        <TypingGame />
-      </AppContainer>
-    </>
+      <Container>
+        <Nav>
+          <ul>
+            <li><Link to="/">연습 모드</Link></li>
+            <li><Link to="/battle">대결 모드</Link></li>
+          </ul>
+        </Nav>
+        <Routes>
+          <Route path="/" element={<TypingGame />} />
+          <Route path="/battle" element={<BattleGame />} />
+        </Routes>
+      </Container>
+    </Router>
   );
-}
+};
 
 export default App;
