@@ -137,7 +137,7 @@ const TypingGame: React.FC = () => {
 
   const translateText = async (text: string): Promise<string> => {
     try {
-      const response = await axios.post(`${process.env.REACT_APP_API_URL}/translate`, {
+      const response = await axios.post('/translate', {
         text
       });
       return response.data.translatedText;
