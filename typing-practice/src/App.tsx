@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import TypingGame from './components/TypingGame';
 import BattleGame from './components/BattleGame';
@@ -45,10 +45,16 @@ const RoomRedirect: React.FC = () => {
   const roomId = params.get('room');
 
   if (roomId) {
-    return <Navigate to={`/battle${location.search}`} replace />;
+    return <Navigate to={`/battle/${roomId}`} replace />;
   }
 
   return <TypingGame />;
+};
+
+const BattleGamePage: React.FC = () => {
+  const { roomId } = useParams();
+
+  return <BattleGame roomId={roomId} />;
 };
 
 const App: React.FC = () => {
@@ -64,7 +70,7 @@ const App: React.FC = () => {
         </Nav>
         <Routes>
           <Route path="/" element={<RoomRedirect />} />
-          <Route path="/battle" element={<BattleGame />} />
+          <Route path="/battle/:roomId" element={<BattleGamePage />} />
         </Routes>
       </Container>
     </Router>
