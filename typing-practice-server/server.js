@@ -24,9 +24,12 @@ const io = new Server(server, {
   },
   path: '/socket.io/',
   transports: ['polling'],
-  pingInterval: 10000,
-  pingTimeout: 5000,
-  cookie: false
+  pingInterval: 25000,
+  pingTimeout: 20000,
+  connectTimeout: 45000,
+  allowUpgrades: false,
+  cookie: false,
+  maxHttpBufferSize: 1e8
 });
 
 // 번역 엔드포인트
@@ -296,6 +299,10 @@ function calculateOverallProgress(sentenceProgress) {
   const sum = sentenceProgress.reduce((acc, curr) => acc + curr, 0);
   return Math.round(sum / sentenceProgress.length);
 }
+
+setInterval(() => {
+  io.emit('ping');
+}, 25000);
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {

@@ -265,6 +265,7 @@ const BattleGame: React.FC = () => {
   const [winner, setWinner] = useState<string>('');
   const [gameStartTime, setGameStartTime] = useState<number>(0);
   const [currentSentence, setCurrentSentence] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -276,10 +277,12 @@ const BattleGame: React.FC = () => {
       transports: ['polling'],
       path: '/socket.io/',
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      timeout: 20000,
-      forceNew: true
+      reconnectionDelayMax: 5000,
+      timeout: 45000,
+      forceNew: true,
+      autoConnect: true
     });
 
     // Socket 연결 시도
@@ -292,6 +295,7 @@ const BattleGame: React.FC = () => {
     // Socket 연결 디버깅
     newSocket.on('connect', () => {
       console.log('Socket connected successfully:', newSocket.id);
+      setIsConnected(true);
     });
 
     newSocket.on('connect_error', (error: Error) => {
@@ -300,20 +304,25 @@ const BattleGame: React.FC = () => {
         name: error.name,
         stack: error.stack
       });
-    });
-
-    newSocket.on('error', (error: Error) => {
-      console.error('Socket error:', error);
+      setIsConnected(false);
     });
 
     newSocket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected. Reason:', reason);
-      if (reason === 'io server disconnect' || reason === 'transport error') {
+      setIsConnected(false);
+      
+      // 자동 재연결 시도
+      if (reason === 'io server disconnect' || reason === 'transport close') {
         setTimeout(() => {
           console.log('Attempting to reconnect...');
           newSocket.connect();
         }, 1000);
       }
+    });
+
+    // Keep-alive 핑 응답
+    newSocket.on('ping', () => {
+      newSocket.emit('pong');
     });
 
     setSocket(newSocket);
@@ -463,14 +472,14 @@ const BattleGame: React.FC = () => {
     <Container>
       <BattleHeader>
         <h2>타자 대결</h2>
-        {roomId && gameStatus === 'waiting' && (
+        {isConnected && roomId && (
           <ShareLink>
             <input 
               type="text" 
-              value={`${window.location.origin}/battle?room=${roomId}`} 
+              value={`${window.location.origin}?room=${roomId}`} 
               readOnly 
             />
-            <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/battle?room=${roomId}`)}>
+            <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}?room=${roomId}`)}>
               링크 복사
             </button>
           </ShareLink>
