@@ -269,7 +269,15 @@ const BattleGame: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const roomIdParam = params.get('room');
 
-    const newSocket = io(process.env.REACT_APP_API_URL || 'http://localhost:4000');
+    const newSocket = io(process.env.REACT_APP_API_URL || 'http://localhost:4000', {
+      transports: ['polling', 'websocket'],
+      upgrade: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000
+    });
+
     setSocket(newSocket);
 
     if (roomIdParam) {
@@ -278,6 +286,18 @@ const BattleGame: React.FC = () => {
     } else {
       newSocket.emit('create-room');
     }
+
+    newSocket.on('connect', () => {
+      console.log('Socket connected:', newSocket.id);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+    });
 
     newSocket.on('room-created', ({ roomId, sentences }) => {
       setRoomId(roomId);
