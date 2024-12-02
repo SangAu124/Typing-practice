@@ -287,15 +287,15 @@ const BattleGame: React.FC = () => {
       console.log('Socket connected successfully:', newSocket.id);
     });
 
-    newSocket.on('connect_error', (error) => {
+    newSocket.on('connect_error', (error: Error) => {
       console.error('Socket connection error details:', {
         message: error.message,
-        description: error.description,
-        type: error.type
+        name: error.name,
+        stack: error.stack
       });
     });
 
-    newSocket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected. Reason:', reason);
       if (reason === 'io server disconnect') {
         // 서버에서 연결을 끊었을 때 재연결 시도
@@ -314,11 +314,11 @@ const BattleGame: React.FC = () => {
       console.log('Socket connected:', newSocket.id);
     });
 
-    newSocket.on('connect_error', (error) => {
+    newSocket.on('connect_error', (error: Error) => {
       console.error('Socket connection error:', error);
     });
 
-    newSocket.on('disconnect', (reason) => {
+    newSocket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected:', reason);
     });
 
