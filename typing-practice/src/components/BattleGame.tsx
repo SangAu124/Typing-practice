@@ -4,183 +4,239 @@ import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 
 const Container = styled.div`
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
+  color: var(--text-primary);
 `;
 
 const BattleHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--primary-color);
+
+  h2 {
+    color: var(--primary-color);
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+  }
 `;
 
 const ShareLink = styled.div`
   display: flex;
-  align-items: center;
   gap: 10px;
-  padding: 10px;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
-  
+  align-items: center;
+
   input {
-    padding: 5px 10px;
-    border: 1px solid var(--accent-secondary);
-    border-radius: 4px;
-    background: var(--bg-primary);
+    width: 300px;
+    padding: 10px;
+    border: 2px solid var(--primary-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
     color: var(--text-primary);
+    font-size: 0.9rem;
   }
-  
+
   button {
-    padding: 5px 10px;
-    background: var(--accent-primary);
-    color: var(--bg-primary);
+    padding: 10px 20px;
+    background: var(--primary-color);
+    color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
-    
+    font-weight: 600;
+    transition: all 0.2s ease;
+
     &:hover {
-      opacity: 0.9;
+      background: var(--primary-dark);
+      transform: translateY(-2px);
     }
   }
 `;
 
 const BattleArea = styled.div`
-  margin-top: 20px;
-`;
-
-const ProgressBar = styled.div<{ $progress: number }>`
-  width: 100%;
-  height: 20px;
-  background-color: var(--bg-secondary);
-  border-radius: 10px;
-  overflow: hidden;
-  margin: 10px 0;
-  
-  &::after {
-    content: '';
-    display: block;
-    width: ${props => props.$progress}%;
-    height: 100%;
-    background-color: var(--accent-primary);
-    transition: width 0.3s ease;
-  }
+  background: var(--bg-secondary);
+  padding: 30px;
+  border-radius: 15px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 `;
 
 const PlayerStats = styled.div`
   display: flex;
-  justify-content: space-between;
-  margin: 10px 0;
-  
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 15px;
+  background: var(--bg-primary);
+  border-radius: 10px;
+  border-left: 4px solid var(--primary-color);
+
   span {
     color: var(--text-secondary);
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+
+    &:first-child {
+      color: var(--primary-color);
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
   }
+`;
+
+const ProgressBarContainer = styled.div`
+  width: 100%;
+  height: 20px;
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  margin: 10px 0;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+`;
+
+const ProgressBarFill = styled.div<{ $progress: number }>`
+  width: ${props => props.$progress}%;
+  height: 100%;
+  background-color: #4CAF50;
+  transition: width 0.3s ease-in-out;
+  border-radius: 10px;
 `;
 
 const SentenceDisplay = styled.div`
   margin: 20px 0;
-  padding: 20px;
-  background: #f5f5f5;
-  border-radius: 8px;
+  padding: 25px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  border: 2px solid var(--primary-color);
 `;
 
 const CurrentSentence = styled.div`
-  font-size: 1.2em;
-  margin-bottom: 10px;
-  color: #333;
+  font-size: 1.3em;
+  margin-bottom: 15px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  letter-spacing: 0.3px;
 `;
 
 const NextSentence = styled.div`
-  font-size: 0.9em;
-  color: #666;
-  border-top: 1px solid #ddd;
-  padding-top: 10px;
-  margin-top: 10px;
-`;
-
-const TextDisplay = styled.div`
-  font-size: 1.5rem;
-  margin: 20px 0;
-  padding: 20px;
-  background-color: var(--bg-secondary);
-  border-radius: 8px;
-  line-height: 1.6;
-  color: var(--text-tertiary);
+  font-size: 1rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
+  padding-top: 15px;
+  margin-top: 15px;
+  opacity: 0.8;
 `;
 
 const Input = styled.textarea`
   width: 100%;
-  height: 100px;
   padding: 15px;
-  font-size: 1.2rem;
   margin: 20px 0;
-  background-color: var(--bg-secondary);
-  border: 2px solid var(--accent-secondary);
-  border-radius: 8px;
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 1.1rem;
   resize: none;
-  color: var(--text-tertiary);
-  
+  height: 100px;
+  transition: all 0.3s ease;
+
   &:focus {
     outline: none;
-    border-color: var(--accent-primary);
-  }
-`;
-
-const RematchButton = styled.button`
-  background-color: #4CAF50;
-  color: white;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 25px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  margin: 10px;
-
-  &:hover {
-    background-color: #45a049;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light);
   }
 
-  &:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 `;
 
 const ResultDisplay = styled.div`
   text-align: center;
-  margin: 20px 0;
+  margin: 30px 0;
+  padding: 30px;
+  background: var(--bg-primary);
+  border-radius: 15px;
+  border: 2px solid var(--primary-color);
 
   h3 {
-    font-size: 24px;
-    color: #2c3e50;
-    margin-bottom: 15px;
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: var(--primary-color);
   }
 
   .stats {
     display: flex;
     justify-content: center;
-    gap: 20px;
-    margin-bottom: 20px;
-  }
+    gap: 40px;
+    margin: 20px 0;
 
-  .stat-item {
-    background-color: #f8f9fa;
-    padding: 10px 20px;
-    border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .stat-item {
+      padding: 15px 25px;
+      background: var(--bg-secondary);
+      border-radius: 10px;
+      border-left: 4px solid var(--primary-color);
 
-    span {
-      display: block;
-      &:first-child {
-        font-weight: bold;
-        color: #34495e;
+      span {
+        display: block;
+        margin: 5px 0;
+        color: var(--text-secondary);
+
+        &:first-child {
+          color: var(--primary-color);
+          font-weight: 600;
+          margin-bottom: 10px;
+        }
       }
     }
+  }
+`;
+
+const RematchButton = styled.button`
+  padding: 12px 30px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 20px;
+
+  &:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+`;
+
+const WaitingMessage = styled.div`
+  text-align: center;
+  margin: 40px 0;
+  padding: 30px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  border: 2px dashed var(--primary-color);
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  animation: pulse 2s infinite;
+
+  @keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
   }
 `;
 
@@ -232,6 +288,7 @@ const BattleGame: React.FC = () => {
     });
 
     newSocket.on('player-update', ({ players }) => {
+      console.log('Player update received:', players); // 디버깅용 로그
       setPlayers(players);
     });
 
@@ -294,12 +351,21 @@ const BattleGame: React.FC = () => {
       const minutes = (Date.now() - gameStartTime) / 60000;
       const speed = Math.round(words / minutes) || 0;
 
+      // 진행도 업데이트
       socket.emit('update-progress', {
         roomId,
         progress,
         speed,
         accuracy,
         currentSentence
+      });
+
+      // 디버깅용 로그
+      console.log('Progress update sent:', {
+        progress,
+        currentSentence,
+        speed,
+        accuracy
       });
 
       // 현재 문장을 완료했을 때
@@ -364,26 +430,36 @@ const BattleGame: React.FC = () => {
       </BattleHeader>
 
       <BattleArea>
-        {players.map((player, index) => (
-          <div key={player.id}>
-            <PlayerStats>
-              <span>플레이어 {index + 1}{player.id === socket?.id ? ' (나)' : ''}</span>
-              <span>정확도: {player.accuracy}%</span>
-              <span>속도: {player.speed} WPM</span>
-              <span>진행도: {player.overallProgress}%</span>
-              <span>현재 문장: {player.currentSentence + 1}/{sentences.length}</span>
-              {gameStatus === 'finished' && player.rematchReady && (
-                <span>재대결 준비 완료</span>
-              )}
-            </PlayerStats>
-            <ProgressBar $progress={player.overallProgress} />
-          </div>
-        ))}
-
+        {players.map((player, index) => {
+          const progress = Math.max(0, Math.min(100, player.overallProgress || 0));
+          console.log(`Rendering progress bar for player ${player.id}:`, {
+            rawProgress: player.overallProgress,
+            calculatedProgress: progress
+          });
+          
+          return (
+            <div key={player.id}>
+              <PlayerStats>
+                <span>플레이어 {index + 1}{player.id === socket?.id ? ' (나)' : ''}</span>
+                <span>정확도: {player.accuracy}%</span>
+                <span>속도: {player.speed} WPM</span>
+                <span>진행도: {Math.round(progress)}%</span>
+                <span>현재 문장: {player.currentSentence + 1}/{sentences.length}</span>
+                {gameStatus === 'finished' && player.rematchReady && (
+                  <span>재대결 준비 완료</span>
+                )}
+              </PlayerStats>
+              <ProgressBarContainer>
+                <ProgressBarFill $progress={progress} />
+              </ProgressBarContainer>
+            </div>
+          );
+        })}
+        
         {gameStatus === 'waiting' && (
-          <div style={{ textAlign: 'center', margin: '20px 0' }}>
+          <WaitingMessage>
             상대방을 기다리는 중...
-          </div>
+          </WaitingMessage>
         )}
 
         {(gameStatus === 'playing' || gameStatus === 'finished') && sentences.length > 0 && (

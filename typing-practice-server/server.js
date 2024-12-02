@@ -91,7 +91,8 @@ io.on('connection', (socket) => {
         currentSentence: 0,
         sentenceProgress: Array(sentences.length).fill(0),
         finished: false,
-        rematchReady: false
+        rematchReady: false,
+        overallProgress: 0
       }],
       sentences,
       gameStatus: 'waiting'
@@ -113,7 +114,8 @@ io.on('connection', (socket) => {
         currentSentence: 0,
         sentenceProgress: Array(room.sentences.length).fill(0),
         finished: false,
-        rematchReady: false
+        rematchReady: false,
+        overallProgress: 0
       });
       
       socket.join(roomId);
@@ -132,17 +134,36 @@ io.on('connection', (socket) => {
     if (room && room.gameStatus === 'playing') {
       const player = room.players.find(p => p.id === socket.id);
       if (player) {
+        // 현재 문장의 진행도 업데이트
         player.progress = progress;
         player.speed = speed;
         player.accuracy = accuracy;
         player.currentSentence = currentSentence;
         player.sentenceProgress[currentSentence] = progress;
+
+        // 전체 진행도 계산
+        player.overallProgress = calculateOverallProgress(player.sentenceProgress);
         
+        // 모든 플레이어의 상태 전송
         io.to(roomId).emit('player-update', { 
           players: room.players.map(p => ({
-            ...p,
-            overallProgress: calculateOverallProgress(p.sentenceProgress)
+            id: p.id,
+            progress: p.progress,
+            speed: p.speed,
+            accuracy: p.accuracy,
+            currentSentence: p.currentSentence,
+            sentenceProgress: p.sentenceProgress,
+            overallProgress: p.overallProgress,
+            rematchReady: p.rematchReady
           }))
+        });
+
+        // 디버깅용 로그
+        console.log(`Player ${socket.id} progress update:`, {
+          currentSentence,
+          progress,
+          sentenceProgress: player.sentenceProgress,
+          overallProgress: player.overallProgress
         });
       }
     }
@@ -155,11 +176,18 @@ io.on('connection', (socket) => {
       if (player) {
         player.currentSentence = sentenceIndex + 1;
         player.sentenceProgress[sentenceIndex] = 100;
+        player.overallProgress = calculateOverallProgress(player.sentenceProgress);
         
         io.to(roomId).emit('player-update', { 
           players: room.players.map(p => ({
-            ...p,
-            overallProgress: calculateOverallProgress(p.sentenceProgress)
+            id: p.id,
+            progress: p.progress,
+            speed: p.speed,
+            accuracy: p.accuracy,
+            currentSentence: p.currentSentence,
+            sentenceProgress: p.sentenceProgress,
+            overallProgress: p.overallProgress,
+            rematchReady: p.rematchReady
           }))
         });
       }
@@ -221,6 +249,7 @@ io.on('connection', (socket) => {
             p.finished = false;
             p.finalSpeed = 0;
             p.finalAccuracy = 0;
+            p.overallProgress = 0;
           });
           io.to(roomId).emit('rematch-start', { sentences: room.sentences });
         } else {
@@ -250,7 +279,7 @@ io.on('connection', (socket) => {
 });
 
 function calculateOverallProgress(sentenceProgress) {
-  if (!sentenceProgress.length) return 0;
+  if (!sentenceProgress || sentenceProgress.length === 0) return 0;
   const sum = sentenceProgress.reduce((acc, curr) => acc + curr, 0);
   return Math.round(sum / sentenceProgress.length);
 }
