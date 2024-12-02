@@ -19,13 +19,17 @@ const io = new Server(server, {
   cors: {
     origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
     methods: ['GET', 'POST'],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ['Content-Type']
   },
   path: '/socket.io/',
-  serveClient: false,
-  pingInterval: 10000,
-  pingTimeout: 5000,
-  cookie: false
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingInterval: 20000,
+  pingTimeout: 10000,
+  cookie: false,
+  allowUpgrades: true,
+  perMessageDeflate: false
 });
 
 // 번역 엔드포인트

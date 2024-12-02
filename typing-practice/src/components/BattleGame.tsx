@@ -273,14 +273,15 @@ const BattleGame: React.FC = () => {
 
     const newSocket = io(SOCKET_SERVER_URL, {
       withCredentials: true,
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'],
       path: '/socket.io/',
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
-      autoConnect: false
+      forceNew: true,
+      autoConnect: true
     });
 
     // Socket 연결 시도
