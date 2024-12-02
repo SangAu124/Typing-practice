@@ -250,14 +250,38 @@ const TypingGame: React.FC = () => {
     }
   };
 
+  const calculateKeystrokes = (text: string): number => {
+    let keystrokes = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (/[\u3131-\u314E\u314F-\u3163\u3165-\u318E\uAC00-\uD7A3]/.test(char)) {
+        // 한글인 경우
+        if (char >= '\uAC00' && char <= '\uD7A3') {
+          // 완성형 한글
+          const unicode = char.charCodeAt(0) - 0xAC00;
+          const jong = unicode % 28;
+          keystrokes += jong > 0 ? 3 : 2; // 종성이 있으면 3타, 없으면 2타
+        } else {
+          // 자음/모음
+          keystrokes += 1;
+        }
+      } else {
+        // 영문, 숫자, 특수문자, 공백
+        keystrokes += 1;
+      }
+    }
+    return keystrokes;
+  };
+  
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setUserInput(value);
-
+  
     if (!startTime && value.length === 1) {
       setStartTime(Date.now());
     }
-
+  
+    // 정확도 계산 (기존 코드)
     let correctChars = 0;
     const minLength = Math.min(value.length, getCurrentText().length);
     for (let i = 0; i < minLength; i++) {
@@ -265,17 +289,20 @@ const TypingGame: React.FC = () => {
     }
     const newAccuracy = Math.round((correctChars / value.length) * 100) || 100;
     setAccuracy(newAccuracy);
-
+  
     if (startTime) {
       const timeElapsed = (Date.now() - startTime) / 1000;
       const minutes = timeElapsed / 60;
       
+      // 타수 계산 수정
+      const keystrokes = calculateKeystrokes(value);
+      const newTypingSpeed = Math.round((keystrokes * 60) / timeElapsed);
+      setTypingSpeed(newTypingSpeed);
+  
+      // WPM 계산 (기존 코드)
       const wordsTyped = value.length / 5;
       const newSpeed = Math.round(wordsTyped / minutes);
       setSpeed(newSpeed);
-
-      const newTypingSpeed = Math.round((value.length * 60) / timeElapsed);
-      setTypingSpeed(newTypingSpeed);
     }
   };
 
