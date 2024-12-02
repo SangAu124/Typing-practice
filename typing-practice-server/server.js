@@ -1,39 +1,31 @@
 const express = require('express');
 const app = express();
+const cors = require('cors');
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
+const axios = require('axios');
 
-const io = new Server(server, {
-  cors: {
-    origin: ["https://typing-practice-front-end.vercel.app", "http://localhost:3000"],
-    methods: ["GET", "POST"],
-    allowedHeaders: ["my-custom-header"],
-    credentials: true
-  },
-  transports: ['websocket', 'polling'],
-  allowEIO3: true,
-  pingTimeout: 60000,
-  pingInterval: 25000
-});
-
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://typing-practice-front-end.vercel.app');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Credentials', true);
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
+// CORS 미들웨어 설정
+app.use(cors({
+  origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true
+}));
 
 app.use(express.json());
 
-// 기본 헬스 체크 엔드포인트
-app.get('/', (req, res) => {
-  res.send('Server is running');
+const io = new Server(server, {
+  cors: {
+    origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  path: '/socket.io/',
+  serveClient: false,
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  cookie: false
 });
 
 // 번역 엔드포인트
@@ -43,11 +35,13 @@ app.get('/translate', async (req, res) => {
     const targetLang = 'en';
     const encodedText = encodeURI(text);
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
+    
     const response = await axios.get(url);
     const translatedText = response.data[0].reduce((acc, curr) => {
       if (curr[0]) return acc + curr[0];
       return acc;
     }, '');
+    
     res.json({ translatedText });
   } catch (error) {
     console.error('Translation error:', error);
@@ -55,23 +49,30 @@ app.get('/translate', async (req, res) => {
   }
 });
 
-// POST 라우트는 유지
+// POST 라우트
 app.post('/translate', async (req, res) => {
   try {
     const { text } = req.body;
     const targetLang = 'en';
     const encodedText = encodeURI(text);
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
+    
     const response = await axios.get(url);
     const translatedText = response.data[0].reduce((acc, curr) => {
       if (curr[0]) return acc + curr[0];
       return acc;
     }, '');
+    
     res.json({ translatedText });
   } catch (error) {
     console.error('Translation error:', error);
     res.status(500).json({ error: 'Translation failed', details: error.message });
   }
+});
+
+// 기본 헬스 체크 엔드포인트
+app.get('/', (req, res) => {
+  res.send('Server is running');
 });
 
 const textGenerator = () => {

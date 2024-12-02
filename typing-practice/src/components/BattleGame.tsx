@@ -253,7 +253,7 @@ interface Player {
   rematchReady?: boolean;
 }
 
-const SOCKET_SERVER_URL = process.env.REACT_APP_API_URL || 'https://typing-practice-server.vercel.app';
+const SOCKET_SERVER_URL = process.env.NODE_ENV === 'development' ? 'http://localhost:4000' : process.env.REACT_APP_API_URL;
 
 const BattleGame: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -273,13 +273,13 @@ const BattleGame: React.FC = () => {
 
     const newSocket = io(SOCKET_SERVER_URL, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
-      timeout: 60000,
-      forceNew: true,
+      transports: ['polling', 'websocket'],
+      path: '/socket.io/',
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      timeout: 20000,
       autoConnect: false
     });
 
@@ -301,17 +301,17 @@ const BattleGame: React.FC = () => {
         name: error.name,
         stack: error.stack
       });
-      // 재연결 시도
-      setTimeout(() => {
-        newSocket.connect();
-      }, 1000);
+    });
+
+    newSocket.on('error', (error: Error) => {
+      console.error('Socket error:', error);
     });
 
     newSocket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected. Reason:', reason);
       if (reason === 'io server disconnect' || reason === 'transport error') {
-        // 서버에서 연결을 끊었을 때 재연결 시도
         setTimeout(() => {
+          console.log('Attempting to reconnect...');
           newSocket.connect();
         }, 1000);
       }
