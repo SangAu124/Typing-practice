@@ -63,29 +63,16 @@ app.post('/translate', async (req, res) => {
   }
 });
 
-const sentences = [
-  "The quick brown fox jumps over the lazy dog. A wizard's job is to vex chumps quickly in fog. Pack my box with five dozen liquor jugs.",
-  "She sells seashells by the seashore. The waves crashed on the sandy beach. The sun set behind the mountains.",
-  "The old clock struck midnight. The wind howled through the trees. The stars twinkled in the night sky.",
-  "A rainbow appeared after the storm. Birds sang their morning songs. Flowers bloomed in the garden.",
-  "The coffee machine beeped loudly. Steam rose from the cup. The aroma filled the room."
-];
-
-const getRandomText = () => {
-  const usedTexts = new Set();
-  return () => {
-    let availableTexts = sentences.filter(text => !usedTexts.has(text));
-    if (availableTexts.length === 0) {
-      usedTexts.clear();
-      availableTexts = sentences;
-    }
-    const text = availableTexts[Math.floor(Math.random() * availableTexts.length)];
-    usedTexts.add(text);
-    return text;
-  };
+const textGenerator = () => {
+  // 여러 문장 배열 생성
+  const sentences = [
+    "타자 연습의 첫 번째 문장입니다. 천천히 정확하게 입력해보세요.",
+    "두 번째 문장입니다. 이제 속도를 조금 올려볼까요?",
+    "마지막 문장입니다. 최선을 다해 입력해주세요!"
+  ];
+  return sentences;
 };
 
-const textGenerator = getRandomText();
 const rooms = new Map();
 
 io.on('connection', (socket) => {
@@ -93,19 +80,25 @@ io.on('connection', (socket) => {
 
   socket.on('create-room', () => {
     const roomId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const sentences = textGenerator();
     rooms.set(roomId, {
-      text: textGenerator(),
+      id: roomId,
       players: [{
         id: socket.id,
         progress: 0,
         speed: 0,
-        accuracy: 100
+        accuracy: 100,
+        currentSentence: 0,
+        sentenceProgress: Array(sentences.length).fill(0),
+        finished: false,
+        rematchReady: false
       }],
+      sentences,
       gameStatus: 'waiting'
     });
     
     socket.join(roomId);
-    socket.emit('room-created', { roomId, text: rooms.get(roomId).text });
+    socket.emit('room-created', { roomId, sentences });
     console.log('Room created:', roomId);
   });
 
@@ -116,18 +109,25 @@ io.on('connection', (socket) => {
         id: socket.id,
         progress: 0,
         speed: 0,
-        accuracy: 100
+        accuracy: 100,
+        currentSentence: 0,
+        sentenceProgress: Array(room.sentences.length).fill(0),
+        finished: false,
+        rematchReady: false
       });
       
       socket.join(roomId);
-      room.gameStatus = 'playing';
-      socket.emit('room-joined', { text: room.text });
+      socket.emit('room-joined', { sentences: room.sentences });
       io.to(roomId).emit('player-update', { players: room.players });
-      io.to(roomId).emit('game-start');
+      
+      if (room.players.length === 2) {
+        room.gameStatus = 'playing';
+        io.to(roomId).emit('game-start');
+      }
     }
   });
 
-  socket.on('update-progress', ({ roomId, progress, speed, accuracy }) => {
+  socket.on('update-progress', ({ roomId, progress, speed, accuracy, currentSentence }) => {
     const room = rooms.get(roomId);
     if (room && room.gameStatus === 'playing') {
       const player = room.players.find(p => p.id === socket.id);
@@ -135,18 +135,69 @@ io.on('connection', (socket) => {
         player.progress = progress;
         player.speed = speed;
         player.accuracy = accuracy;
+        player.currentSentence = currentSentence;
+        player.sentenceProgress[currentSentence] = progress;
         
-        io.to(roomId).emit('player-update', { players: room.players });
+        io.to(roomId).emit('player-update', { 
+          players: room.players.map(p => ({
+            ...p,
+            overallProgress: calculateOverallProgress(p.sentenceProgress)
+          }))
+        });
       }
     }
   });
 
-  socket.on('game-finished', ({ roomId }) => {
+  socket.on('sentence-completed', ({ roomId, sentenceIndex }) => {
     const room = rooms.get(roomId);
     if (room && room.gameStatus === 'playing') {
-      const winner = socket.id;
-      room.gameStatus = 'finished';
-      io.to(roomId).emit('game-over', { winner });
+      const player = room.players.find(p => p.id === socket.id);
+      if (player) {
+        player.currentSentence = sentenceIndex + 1;
+        player.sentenceProgress[sentenceIndex] = 100;
+        
+        io.to(roomId).emit('player-update', { 
+          players: room.players.map(p => ({
+            ...p,
+            overallProgress: calculateOverallProgress(p.sentenceProgress)
+          }))
+        });
+      }
+    }
+  });
+
+  socket.on('game-finished', ({ roomId, speed, accuracy }) => {
+    const room = rooms.get(roomId);
+    if (room && room.gameStatus === 'playing') {
+      const finishedPlayer = room.players.find(p => p.id === socket.id);
+      if (finishedPlayer) {
+        finishedPlayer.finished = true;
+        finishedPlayer.finalSpeed = speed;
+        finishedPlayer.finalAccuracy = accuracy;
+
+        // 모든 플레이어가 완료했는지 확인
+        if (room.players.every(p => p.finished)) {
+          // 승자 결정: 정확도와 속도를 모두 고려
+          const scores = room.players.map(p => ({
+            id: p.id,
+            score: (p.finalAccuracy * 0.6) + (p.finalSpeed * 0.4) // 정확도 60%, 속도 40% 비중
+          }));
+          
+          scores.sort((a, b) => b.score - a.score);
+          const winner = scores[0].id;
+          
+          room.gameStatus = 'finished';
+          io.to(roomId).emit('game-over', { 
+            winner,
+            players: room.players.map(p => ({
+              id: p.id,
+              progress: p.progress,
+              speed: p.finalSpeed,
+              accuracy: p.finalAccuracy
+            }))
+          });
+        }
+      }
     }
   });
 
@@ -158,15 +209,20 @@ io.on('connection', (socket) => {
         player.rematchReady = true;
         
         if (room.players.every(p => p.rematchReady)) {
-          room.text = textGenerator();
+          room.sentences = textGenerator();
           room.gameStatus = 'playing';
           room.players.forEach(p => {
             p.rematchReady = false;
             p.progress = 0;
             p.speed = 0;
             p.accuracy = 100;
+            p.currentSentence = 0;
+            p.sentenceProgress = Array(room.sentences.length).fill(0);
+            p.finished = false;
+            p.finalSpeed = 0;
+            p.finalAccuracy = 0;
           });
-          io.to(roomId).emit('rematch-start', { text: room.text });
+          io.to(roomId).emit('rematch-start', { sentences: room.sentences });
         } else {
           io.to(roomId).emit('player-update', { players: room.players });
         }
@@ -192,6 +248,12 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+function calculateOverallProgress(sentenceProgress) {
+  if (!sentenceProgress.length) return 0;
+  const sum = sentenceProgress.reduce((acc, curr) => acc + curr, 0);
+  return Math.round(sum / sentenceProgress.length);
+}
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {

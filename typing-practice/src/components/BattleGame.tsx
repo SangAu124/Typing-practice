@@ -78,6 +78,27 @@ const PlayerStats = styled.div`
   }
 `;
 
+const SentenceDisplay = styled.div`
+  margin: 20px 0;
+  padding: 20px;
+  background: #f5f5f5;
+  border-radius: 8px;
+`;
+
+const CurrentSentence = styled.div`
+  font-size: 1.2em;
+  margin-bottom: 10px;
+  color: #333;
+`;
+
+const NextSentence = styled.div`
+  font-size: 0.9em;
+  color: #666;
+  border-top: 1px solid #ddd;
+  padding-top: 10px;
+  margin-top: 10px;
+`;
+
 const TextDisplay = styled.div`
   font-size: 1.5rem;
   margin: 20px 0;
@@ -106,23 +127,84 @@ const Input = styled.textarea`
   }
 `;
 
+const RematchButton = styled.button`
+  background-color: #4CAF50;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 25px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  margin: 10px;
+
+  &:hover {
+    background-color: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+`;
+
+const ResultDisplay = styled.div`
+  text-align: center;
+  margin: 20px 0;
+
+  h3 {
+    font-size: 24px;
+    color: #2c3e50;
+    margin-bottom: 15px;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  .stat-item {
+    background-color: #f8f9fa;
+    padding: 10px 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+    span {
+      display: block;
+      &:first-child {
+        font-weight: bold;
+        color: #34495e;
+      }
+    }
+  }
+`;
+
 interface Player {
   id: string;
   progress: number;
   speed: number;
   accuracy: number;
+  currentSentence: number;
+  sentenceProgress: number[];
+  overallProgress: number;
   rematchReady?: boolean;
 }
 
 const BattleGame: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [roomId, setRoomId] = useState<string>('');
-  const [text, setText] = useState<string>('');
+  const [sentences, setSentences] = useState<string[]>([]);
   const [userInput, setUserInput] = useState('');
   const [players, setPlayers] = useState<Player[]>([]);
   const [gameStatus, setGameStatus] = useState<'waiting' | 'playing' | 'finished'>('waiting');
   const [winner, setWinner] = useState<string>('');
   const [gameStartTime, setGameStartTime] = useState<number>(0);
+  const [currentSentence, setCurrentSentence] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -139,17 +221,17 @@ const BattleGame: React.FC = () => {
       newSocket.emit('create-room');
     }
 
-    newSocket.on('room-created', ({ roomId, text }) => {
+    newSocket.on('room-created', ({ roomId, sentences }) => {
       setRoomId(roomId);
-      setText(text);
+      setSentences(sentences);
       window.history.pushState({}, '', `?room=${roomId}`);
     });
 
-    newSocket.on('room-joined', ({ text }) => {
-      setText(text);
+    newSocket.on('room-joined', ({ sentences }) => {
+      setSentences(sentences);
     });
 
-    newSocket.on('player-update', ({ players }: { players: Player[] }) => {
+    newSocket.on('player-update', ({ players }) => {
       setPlayers(players);
     });
 
@@ -157,27 +239,31 @@ const BattleGame: React.FC = () => {
       setGameStatus('playing');
       setGameStartTime(Date.now());
       setUserInput('');
+      setCurrentSentence(0);
       if (inputRef.current) {
         inputRef.current.focus();
       }
     });
 
-    newSocket.on('game-over', ({ winner }) => {
+    newSocket.on('game-over', ({ winner, players }) => {
       setGameStatus('finished');
       setWinner(winner);
+      setPlayers(players);
     });
 
     newSocket.on('player-left', () => {
       setGameStatus('waiting');
       setUserInput('');
-      setText('');
+      setSentences([]);
+      setCurrentSentence(0);
     });
 
-    newSocket.on('rematch-start', ({ text }) => {
-      setText(text);
+    newSocket.on('rematch-start', ({ sentences }) => {
+      setSentences(sentences);
       setUserInput('');
       setGameStatus('playing');
       setWinner('');
+      setCurrentSentence(0);
       setGameStartTime(Date.now());
       if (inputRef.current) {
         inputRef.current.focus();
@@ -193,13 +279,14 @@ const BattleGame: React.FC = () => {
     const value = e.target.value;
     setUserInput(value);
 
-    if (socket && roomId && gameStatus === 'playing') {
-      const progress = Math.round((value.length / text.length) * 100);
+    if (socket && roomId && gameStatus === 'playing' && currentSentence < sentences.length) {
+      const currentText = sentences[currentSentence];
+      const progress = Math.round((value.length / currentText.length) * 100);
       
       let correctChars = 0;
-      const minLength = Math.min(value.length, text.length);
+      const minLength = Math.min(value.length, currentText.length);
       for (let i = 0; i < minLength; i++) {
-        if (value[i] === text[i]) correctChars++;
+        if (value[i] === currentText[i]) correctChars++;
       }
       const accuracy = Math.round((correctChars / value.length) * 100) || 100;
 
@@ -211,24 +298,51 @@ const BattleGame: React.FC = () => {
         roomId,
         progress,
         speed,
-        accuracy
+        accuracy,
+        currentSentence
       });
 
-      if (progress === 100) {
-        socket.emit('game-finished', { roomId });
+      // 현재 문장을 완료했을 때
+      if (value === currentText) {
+        socket.emit('sentence-completed', { 
+          roomId,
+          sentenceIndex: currentSentence
+        });
+
+        // 다음 문장으로 이동
+        if (currentSentence < sentences.length - 1) {
+          setCurrentSentence(prev => prev + 1);
+          setUserInput('');
+        } else {
+          // 모든 문장 완료
+          socket.emit('game-finished', { 
+            roomId,
+            speed,
+            accuracy
+          });
+        }
       }
     }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+      e.preventDefault();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+  };
+
+  const handleCopy = (e: React.ClipboardEvent) => {
+    e.preventDefault();
   };
 
   const handleRematch = () => {
     if (socket && roomId) {
       socket.emit('rematch-request', { roomId });
     }
-  };
-
-  const copyRoomLink = () => {
-    const url = `${window.location.origin}/battle?room=${roomId}`;
-    navigator.clipboard.writeText(url);
   };
 
   return (
@@ -242,7 +356,9 @@ const BattleGame: React.FC = () => {
               value={`${window.location.origin}/battle?room=${roomId}`} 
               readOnly 
             />
-            <button onClick={copyRoomLink}>링크 복사</button>
+            <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/battle?room=${roomId}`)}>
+              링크 복사
+            </button>
           </ShareLink>
         )}
       </BattleHeader>
@@ -254,11 +370,13 @@ const BattleGame: React.FC = () => {
               <span>플레이어 {index + 1}{player.id === socket?.id ? ' (나)' : ''}</span>
               <span>정확도: {player.accuracy}%</span>
               <span>속도: {player.speed} WPM</span>
+              <span>진행도: {player.overallProgress}%</span>
+              <span>현재 문장: {player.currentSentence + 1}/{sentences.length}</span>
               {gameStatus === 'finished' && player.rematchReady && (
                 <span>재대결 준비 완료</span>
               )}
             </PlayerStats>
-            <ProgressBar $progress={player.progress} />
+            <ProgressBar $progress={player.overallProgress} />
           </div>
         ))}
 
@@ -268,13 +386,21 @@ const BattleGame: React.FC = () => {
           </div>
         )}
 
-        {(gameStatus === 'playing' || gameStatus === 'finished') && (
+        {(gameStatus === 'playing' || gameStatus === 'finished') && sentences.length > 0 && (
           <>
-            <TextDisplay>{text}</TextDisplay>
+            <SentenceDisplay>
+              <CurrentSentence>{sentences[currentSentence]}</CurrentSentence>
+              {currentSentence < sentences.length - 1 && (
+                <NextSentence>다음 문장: {sentences[currentSentence + 1]}</NextSentence>
+              )}
+            </SentenceDisplay>
             <Input
               ref={inputRef}
               value={userInput}
               onChange={handleInputChange}
+              onPaste={handlePaste}
+              onCopy={handleCopy}
+              onKeyDown={handleKeyDown}
               disabled={gameStatus === 'finished'}
               placeholder="여기에 입력하세요..."
             />
@@ -282,10 +408,27 @@ const BattleGame: React.FC = () => {
         )}
 
         {gameStatus === 'finished' && (
-          <div style={{ textAlign: 'center', margin: '20px 0' }}>
-            <h3>{winner === socket?.id ? '승리!' : '패배...'}</h3>
-            <button onClick={handleRematch}>재대결</button>
-          </div>
+          <ResultDisplay>
+            <h3>
+              {winner === socket?.id ? (
+                <>🏆 승리!</>
+              ) : (
+                <>😢 패배...</>
+              )}
+            </h3>
+            <div className="stats">
+              {players.map((player) => (
+                <div key={player.id} className="stat-item">
+                  <span>{player.id === socket?.id ? '나의 기록' : '상대방 기록'}</span>
+                  <span>정확도: {player.accuracy}%</span>
+                  <span>속도: {player.speed} WPM</span>
+                </div>
+              ))}
+            </div>
+            <RematchButton onClick={handleRematch}>
+              🔄 재대결
+            </RematchButton>
+          </ResultDisplay>
         )}
       </BattleArea>
     </Container>
