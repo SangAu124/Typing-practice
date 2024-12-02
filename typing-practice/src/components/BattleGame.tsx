@@ -93,19 +93,21 @@ const PlayerStats = styled.div`
 const ProgressBarContainer = styled.div`
   width: 100%;
   height: 20px;
-  background-color: #f0f0f0;
+  background-color: #2a2a2a;
   border-radius: 10px;
   margin: 10px 0;
   overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: 1px solid #3a3a3a;
 `;
 
 const ProgressBarFill = styled.div<{ $progress: number }>`
   width: ${props => props.$progress}%;
   height: 100%;
-  background-color: #4CAF50;
+  background: linear-gradient(90deg, #FFD700, #FFEB3B);
   transition: width 0.3s ease-in-out;
   border-radius: 10px;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
 `;
 
 const SentenceDisplay = styled.div`
