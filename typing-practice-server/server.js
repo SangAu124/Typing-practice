@@ -2,16 +2,10 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const axios = require('axios');
+const { translate } = require('@vitalets/google-translate-api');
 
 const app = express();
 const server = createServer(app);
-
-// 에러 핸들링 미들웨어
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(500).json({ error: 'Internal Server Error', details: err.message });
-});
 
 // CORS 설정
 const allowedOrigins = [
@@ -26,8 +20,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn('Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // Vercel 환경에서는 모든 origin 허용
     }
   },
   methods: ['GET', 'POST'],
@@ -36,406 +29,156 @@ app.use(cors({
 
 app.use(express.json());
 
-// 파파고 번역 API 엔드포인트
+// 번역 API 엔드포인트
 app.post('/api/translate', async (req, res) => {
   try {
     const { text } = req.body;
-    const clientId = process.env.PAPAGO_CLIENT_ID;
-    const clientSecret = process.env.PAPAGO_CLIENT_SECRET;
-
-    if (!clientId || !clientSecret) {
-      throw new Error('Papago API credentials not configured');
-    }
-
-    const response = await axios({
-      method: 'POST',
-      url: 'https://openapi.naver.com/v1/papago/n2mt',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Naver-Client-Id': clientId,
-        'X-Naver-Client-Secret': clientSecret
-      },
-      data: {
-        source: 'ko',
-        target: 'en',
-        text
-      }
-    });
-
-    res.json(response.data);
+    const { text: translatedText } = await translate(text, { to: 'en' });
+    res.json({ translatedText });
   } catch (error) {
     console.error('Translation error:', error);
-    res.status(500).json({
-      error: 'Translation failed',
-      details: error.message,
-      response: error.response?.data
-    });
+    res.status(500).json({ error: 'Translation failed' });
   }
 });
 
 // Socket.IO 서버 설정
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.warn('Blocked by CORS:', origin);
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: '*', // Vercel 환경에서는 모든 origin 허용
     methods: ['GET', 'POST'],
-    credentials: true,
-    allowedHeaders: ['*']
+    credentials: true
   },
-  transports: ['polling', 'websocket'],
+  transports: ['websocket', 'polling'],
   allowUpgrades: true,
   upgradeTimeout: 10000,
-  pingInterval: 10000,
-  pingTimeout: 5000,
-  connectTimeout: 45000,
-  maxHttpBufferSize: 1e6,
-  path: '/socket.io/'
+  pingInterval: 25000,
+  pingTimeout: 60000,
+  connectTimeout: 60000,
+  maxHttpBufferSize: 1e6
 });
 
-// 활성 연결 관리
-const activeConnections = new Map();
-
+// 방 관리
 const rooms = new Map();
 
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
-  
-  // 연결 관리에 추가
-  activeConnections.set(socket.id, {
-    lastActive: Date.now(),
-    reconnectAttempts: 0
-  });
+  let currentRoom = null;
 
-  // 클라이언트 상태 모니터링
-  const heartbeat = setInterval(() => {
-    socket.emit('heartbeat');
-  }, 5000);
-
-  socket.on('heartbeat-response', () => {
-    if (activeConnections.has(socket.id)) {
-      activeConnections.get(socket.id).lastActive = Date.now();
-      activeConnections.get(socket.id).reconnectAttempts = 0;
+  // 연결 상태 확인
+  const interval = setInterval(() => {
+    if (socket.connected) {
+      socket.emit('ping');
     }
-  });
-
-  socket.on('disconnect', (reason) => {
-    console.log('Client disconnected:', socket.id, 'Reason:', reason);
-    clearInterval(heartbeat);
-    
-    // 재연결 시도 중인 소켓 정보 유지
-    if (reason === 'transport close' || reason === 'ping timeout') {
-      setTimeout(() => {
-        if (activeConnections.has(socket.id)) {
-          const connection = activeConnections.get(socket.id);
-          if (connection.reconnectAttempts < 5) {
-            connection.reconnectAttempts++;
-            activeConnections.set(socket.id, connection);
-          } else {
-            activeConnections.delete(socket.id);
-            const room = Array.from(rooms.entries()).find(([_, r]) => 
-              r.players.some(p => p.id === socket.id)
-            );
-            if (room) {
-              handlePlayerDisconnect(room[0], socket.id);
-            }
-          }
-        }
-      }, 5000);
-    } else {
-      activeConnections.delete(socket.id);
-      const room = Array.from(rooms.entries()).find(([_, r]) => 
-        r.players.some(p => p.id === socket.id)
-      );
-      if (room) {
-        handlePlayerDisconnect(room[0], socket.id);
-      }
-    }
-  });
+  }, 25000);
 
   socket.on('create-room', () => {
-    const roomId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const sentences = textGenerator();
-    rooms.set(roomId, {
-      id: roomId,
-      players: [{
-        id: socket.id,
-        progress: 0,
-        speed: 0,
-        accuracy: 100,
-        currentSentence: 0,
-        sentenceProgress: Array(sentences.length).fill(0),
-        finished: false,
-        rematchReady: false,
-        overallProgress: 0
-      }],
-      sentences,
-      gameStatus: 'waiting'
-    });
-    
-    socket.join(roomId);
-    socket.emit('room-created', { roomId, sentences });
-    console.log('Room created:', roomId);
+    try {
+      const roomId = Math.random().toString(36).substring(7);
+      currentRoom = roomId;
+      socket.join(roomId);
+      rooms.set(roomId, {
+        players: [{ id: socket.id, ready: false }],
+        sentences: generateSentences()
+      });
+      socket.emit('room-created', {
+        roomId,
+        sentences: rooms.get(roomId).sentences
+      });
+      console.log('Room created:', roomId);
+    } catch (error) {
+      console.error('Error creating room:', error);
+      socket.emit('error', { message: 'Failed to create room' });
+    }
   });
 
   socket.on('join-room', ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (room && room.players.length < 2) {
-      room.players.push({
-        id: socket.id,
-        progress: 0,
-        speed: 0,
-        accuracy: 100,
-        currentSentence: 0,
-        sentenceProgress: Array(room.sentences.length).fill(0),
-        finished: false,
-        rematchReady: false,
-        overallProgress: 0
-      });
-      
-      socket.join(roomId);
-      socket.emit('room-joined', { sentences: room.sentences });
-      io.to(roomId).emit('player-update', { players: room.players });
-      
-      if (room.players.length === 2) {
-        room.gameStatus = 'playing';
-        io.to(roomId).emit('game-start');
+    try {
+      const room = rooms.get(roomId);
+      if (room && room.players.length < 2) {
+        currentRoom = roomId;
+        socket.join(roomId);
+        room.players.push({ id: socket.id, ready: false });
+        socket.emit('room-joined', {
+          roomId,
+          sentences: room.sentences
+        });
+        io.to(roomId).emit('player-joined', {
+          players: room.players
+        });
+        console.log('Player joined room:', roomId);
+      } else {
+        socket.emit('error', { message: 'Room not found or full' });
       }
+    } catch (error) {
+      console.error('Error joining room:', error);
+      socket.emit('error', { message: 'Failed to join room' });
     }
   });
 
-  socket.on('update-progress', ({ roomId, progress, speed, accuracy, currentSentence }) => {
-    const room = rooms.get(roomId);
-    if (room && room.gameStatus === 'playing') {
-      const player = room.players.find(p => p.id === socket.id);
-      if (player) {
-        // 현재 문장의 진행도 업데이트
-        player.progress = progress;
-        player.speed = speed;
-        player.accuracy = accuracy;
-        player.currentSentence = currentSentence;
-        player.sentenceProgress[currentSentence] = progress;
-
-        // 전체 진행도 계산
-        player.overallProgress = calculateOverallProgress(player.sentenceProgress);
-        
-        // 모든 플레이어의 상태 전송
-        io.to(roomId).emit('player-update', { 
-          players: room.players.map(p => ({
-            id: p.id,
-            progress: p.progress,
-            speed: p.speed,
-            accuracy: p.accuracy,
-            currentSentence: p.currentSentence,
-            sentenceProgress: p.sentenceProgress,
-            overallProgress: p.overallProgress,
-            rematchReady: p.rematchReady
-          }))
-        });
-
-        // 디버깅용 로그
-        console.log(`Player ${socket.id} progress update:`, {
-          currentSentence,
-          progress,
-          sentenceProgress: player.sentenceProgress,
-          overallProgress: player.overallProgress
-        });
-      }
-    }
-  });
-
-  socket.on('sentence-completed', ({ roomId, sentenceIndex }) => {
-    const room = rooms.get(roomId);
-    if (room && room.gameStatus === 'playing') {
-      const player = room.players.find(p => p.id === socket.id);
-      if (player) {
-        player.currentSentence = sentenceIndex + 1;
-        player.sentenceProgress[sentenceIndex] = 100;
-        player.overallProgress = calculateOverallProgress(player.sentenceProgress);
-        
-        io.to(roomId).emit('player-update', { 
-          players: room.players.map(p => ({
-            id: p.id,
-            progress: p.progress,
-            speed: p.speed,
-            accuracy: p.accuracy,
-            currentSentence: p.currentSentence,
-            sentenceProgress: p.sentenceProgress,
-            overallProgress: p.overallProgress,
-            rematchReady: p.rematchReady
-          }))
-        });
-      }
-    }
-  });
-
-  socket.on('game-finished', ({ roomId, speed, accuracy }) => {
-    const room = rooms.get(roomId);
-    if (room && room.gameStatus === 'playing') {
-      const finishedPlayer = room.players.find(p => p.id === socket.id);
-      if (finishedPlayer) {
-        finishedPlayer.finished = true;
-        finishedPlayer.finalSpeed = speed;
-        finishedPlayer.finalAccuracy = accuracy;
-
-        // 모든 플레이어가 완료했는지 확인
-        if (room.players.every(p => p.finished)) {
-          // 승자 결정: 정확도와 속도를 모두 고려
-          const scores = room.players.map(p => ({
-            id: p.id,
-            score: (p.finalAccuracy * 0.6) + (p.finalSpeed * 0.4) // 정확도 60%, 속도 40% 비중
-          }));
-          
-          scores.sort((a, b) => b.score - a.score);
-          const winner = scores[0].id;
-          
-          room.gameStatus = 'finished';
-          io.to(roomId).emit('game-over', { 
-            winner,
-            players: room.players.map(p => ({
-              id: p.id,
-              progress: p.progress,
-              speed: p.finalSpeed,
-              accuracy: p.finalAccuracy
-            }))
-          });
+  socket.on('player-ready', () => {
+    try {
+      if (currentRoom) {
+        const room = rooms.get(currentRoom);
+        if (room) {
+          const player = room.players.find(p => p.id === socket.id);
+          if (player) {
+            player.ready = true;
+            if (room.players.every(p => p.ready)) {
+              io.to(currentRoom).emit('game-start');
+            }
+          }
         }
       }
+    } catch (error) {
+      console.error('Error in player-ready:', error);
     }
   });
 
-  socket.on('rematch-request', ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (room && room.gameStatus === 'finished') {
-      const player = room.players.find(p => p.id === socket.id);
-      if (player) {
-        player.rematchReady = true;
-        
-        if (room.players.every(p => p.rematchReady)) {
-          room.sentences = textGenerator();
-          room.gameStatus = 'playing';
-          room.players.forEach(p => {
-            p.rematchReady = false;
-            p.progress = 0;
-            p.speed = 0;
-            p.accuracy = 100;
-            p.currentSentence = 0;
-            p.sentenceProgress = Array(room.sentences.length).fill(0);
-            p.finished = false;
-            p.finalSpeed = 0;
-            p.finalAccuracy = 0;
-            p.overallProgress = 0;
-          });
-          io.to(roomId).emit('rematch-start', { sentences: room.sentences });
-        } else {
-          io.to(roomId).emit('player-update', { players: room.players });
+  socket.on('progress-update', (data) => {
+    try {
+      if (currentRoom) {
+        socket.to(currentRoom).emit('opponent-progress', data);
+      }
+    } catch (error) {
+      console.error('Error in progress-update:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    try {
+      clearInterval(interval);
+      if (currentRoom) {
+        const room = rooms.get(currentRoom);
+        if (room) {
+          room.players = room.players.filter(p => p.id !== socket.id);
+          if (room.players.length === 0) {
+            rooms.delete(currentRoom);
+          } else {
+            io.to(currentRoom).emit('player-left', {
+              players: room.players
+            });
+          }
         }
       }
+      console.log('Client disconnected:', socket.id);
+    } catch (error) {
+      console.error('Error in disconnect:', error);
     }
   });
 });
 
-// 연결 관리 함수
-function handlePlayerDisconnect(roomId, playerId) {
-  const room = rooms.get(roomId);
-  if (room) {
-    room.players = room.players.filter(p => p.id !== playerId);
-    if (room.players.length === 0) {
-      rooms.delete(roomId);
-    } else {
-      rooms.set(roomId, room);
-      io.to(roomId).emit('player-left', playerId);
-    }
-  }
-}
-
-// 비활성 연결 정리
-setInterval(() => {
-  const now = Date.now();
-  activeConnections.forEach((connection, socketId) => {
-    if (now - connection.lastActive > 30000) { // 30초 동안 응답 없음
-      const socket = io.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.disconnect(true);
-      }
-      activeConnections.delete(socketId);
-    }
-  });
-}, 10000);
-
-// 번역 엔드포인트
-app.get('/translate', async (req, res) => {
-  try {
-    const { text } = req.query;
-    const targetLang = 'en';
-    const encodedText = encodeURI(text);
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
-    
-    const response = await axios.get(url);
-    const translatedText = response.data[0].reduce((acc, curr) => {
-      if (curr[0]) return acc + curr[0];
-      return acc;
-    }, '');
-    
-    res.json({ translatedText });
-  } catch (error) {
-    console.error('Translation error:', error);
-    res.status(500).json({ error: 'Translation failed', details: error.message });
-  }
-});
-
-// POST 라우트
-app.post('/translate', async (req, res) => {
-  try {
-    const { text } = req.body;
-    const targetLang = 'en';
-    const encodedText = encodeURI(text);
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
-    
-    const response = await axios.get(url);
-    const translatedText = response.data[0].reduce((acc, curr) => {
-      if (curr[0]) return acc + curr[0];
-      return acc;
-    }, '');
-    
-    res.json({ translatedText });
-  } catch (error) {
-    console.error('Translation error:', error);
-    res.status(500).json({ error: 'Translation failed', details: error.message });
-  }
-});
-
-// 기본 헬스 체크 엔드포인트
-app.get('/', (req, res) => {
-  res.send('Server is running');
-});
-
-const textGenerator = () => {
-  // 여러 문장 배열 생성
+// 문장 생성 함수
+function generateSentences() {
   const sentences = [
     "타자 연습의 첫 번째 문장입니다. 천천히 정확하게 입력해보세요.",
     "두 번째 문장입니다. 이제 속도를 조금 올려볼까요?",
     "마지막 문장입니다. 최선을 다해 입력해주세요!"
   ];
   return sentences;
-};
-
-function calculateOverallProgress(sentenceProgress) {
-  if (!sentenceProgress || sentenceProgress.length === 0) return 0;
-  const sum = sentenceProgress.reduce((acc, curr) => acc + curr, 0);
-  return Math.round(sum / sentenceProgress.length);
 }
 
-setInterval(() => {
-  io.emit('ping');
-}, 25000);
-
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// 서버 시작
+const port = process.env.PORT || 4000;
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
