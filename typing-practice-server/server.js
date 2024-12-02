@@ -23,13 +23,10 @@ const io = new Server(server, {
     allowedHeaders: ['Content-Type']
   },
   path: '/socket.io/',
-  transports: ['websocket', 'polling'],
-  allowEIO3: true,
-  pingInterval: 20000,
-  pingTimeout: 10000,
-  cookie: false,
-  allowUpgrades: true,
-  perMessageDeflate: false
+  transports: ['polling'],
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  cookie: false
 });
 
 // 번역 엔드포인트
