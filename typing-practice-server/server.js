@@ -1,42 +1,40 @@
 const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
 const app = express();
-const http = require('http').createServer(app);
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require("socket.io");
 
-// CORS 미들웨어 설정
-app.use(cors({
-  origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  credentials: true,
-  optionsSuccessStatus: 204
-}));
-
-const io = require('socket.io')(http, {
+const io = new Server(server, {
   cors: {
-    origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'OPTIONS'],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    transports: ['polling', 'websocket']
+    origin: ["https://typing-practice-front-end.vercel.app", "http://localhost:3000"],
+    methods: ["GET", "POST"],
+    allowedHeaders: ["my-custom-header"],
+    credentials: true
   },
+  transports: ['websocket', 'polling'],
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000
 });
 
-// 기본 헬스 체크 엔드포인트
-app.get('/', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.send('Server is running');
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://typing-practice-front-end.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', true);
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
 });
 
-// OPTIONS 요청 처리
-app.options('*', cors());
-
 app.use(express.json());
+
+// 기본 헬스 체크 엔드포인트
+app.get('/', (req, res) => {
+  res.send('Server is running');
+});
 
 // 번역 엔드포인트
 app.get('/translate', async (req, res) => {
@@ -298,6 +296,6 @@ function calculateOverallProgress(sentenceProgress) {
 }
 
 const PORT = process.env.PORT || 4000;
-http.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

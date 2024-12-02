@@ -253,6 +253,8 @@ interface Player {
   rematchReady?: boolean;
 }
 
+const SOCKET_SERVER_URL = process.env.REACT_APP_API_URL || 'https://typing-practice-server.vercel.app';
+
 const BattleGame: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [roomId, setRoomId] = useState<string>('');
@@ -269,18 +271,24 @@ const BattleGame: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const roomIdParam = params.get('room');
 
-    const newSocket = io(process.env.REACT_APP_API_URL || 'http://localhost:4000', {
-      transports: ['polling', 'websocket'],
-      upgrade: true,
+    const newSocket = io(SOCKET_SERVER_URL, {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      timeout: 60000,
+      forceNew: true,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-      timeout: 20000,
-      withCredentials: true,
-      forceNew: true
+      reconnectionDelayMax: 5000,
+      autoConnect: false
     });
 
-    setSocket(newSocket);
+    // Socket 연결 시도
+    try {
+      newSocket.connect();
+    } catch (error) {
+      console.error('Socket connection attempt failed:', error);
+    }
 
     // Socket 연결 디버깅
     newSocket.on('connect', () => {
@@ -293,15 +301,23 @@ const BattleGame: React.FC = () => {
         name: error.name,
         stack: error.stack
       });
+      // 재연결 시도
+      setTimeout(() => {
+        newSocket.connect();
+      }, 1000);
     });
 
     newSocket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected. Reason:', reason);
-      if (reason === 'io server disconnect') {
+      if (reason === 'io server disconnect' || reason === 'transport error') {
         // 서버에서 연결을 끊었을 때 재연결 시도
-        newSocket.connect();
+        setTimeout(() => {
+          newSocket.connect();
+        }, 1000);
       }
     });
+
+    setSocket(newSocket);
 
     if (roomIdParam) {
       newSocket.emit('join-room', { roomId: roomIdParam });
@@ -309,18 +325,6 @@ const BattleGame: React.FC = () => {
     } else {
       newSocket.emit('create-room');
     }
-
-    newSocket.on('connect', () => {
-      console.log('Socket connected:', newSocket.id);
-    });
-
-    newSocket.on('connect_error', (error: Error) => {
-      console.error('Socket connection error:', error);
-    });
-
-    newSocket.on('disconnect', (reason: string) => {
-      console.log('Socket disconnected:', reason);
-    });
 
     newSocket.on('room-created', ({ roomId, sentences }) => {
       setRoomId(roomId);
