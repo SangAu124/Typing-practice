@@ -24,75 +24,74 @@ const io = new Server(server, {
   },
   path: '/socket.io/',
   transports: ['polling'],
-  pingInterval: 25000,
-  pingTimeout: 20000,
+  pingInterval: 10000,
+  pingTimeout: 5000,
   connectTimeout: 45000,
   allowUpgrades: false,
   cookie: false,
-  maxHttpBufferSize: 1e8
+  maxHttpBufferSize: 1e8,
+  cleanupEmptyChildNamespaces: true
 });
 
-// 번역 엔드포인트
-app.get('/translate', async (req, res) => {
-  try {
-    const { text } = req.query;
-    const targetLang = 'en';
-    const encodedText = encodeURI(text);
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
-    
-    const response = await axios.get(url);
-    const translatedText = response.data[0].reduce((acc, curr) => {
-      if (curr[0]) return acc + curr[0];
-      return acc;
-    }, '');
-    
-    res.json({ translatedText });
-  } catch (error) {
-    console.error('Translation error:', error);
-    res.status(500).json({ error: 'Translation failed', details: error.message });
-  }
-});
-
-// POST 라우트
-app.post('/translate', async (req, res) => {
-  try {
-    const { text } = req.body;
-    const targetLang = 'en';
-    const encodedText = encodeURI(text);
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
-    
-    const response = await axios.get(url);
-    const translatedText = response.data[0].reduce((acc, curr) => {
-      if (curr[0]) return acc + curr[0];
-      return acc;
-    }, '');
-    
-    res.json({ translatedText });
-  } catch (error) {
-    console.error('Translation error:', error);
-    res.status(500).json({ error: 'Translation failed', details: error.message });
-  }
-});
-
-// 기본 헬스 체크 엔드포인트
-app.get('/', (req, res) => {
-  res.send('Server is running');
-});
-
-const textGenerator = () => {
-  // 여러 문장 배열 생성
-  const sentences = [
-    "타자 연습의 첫 번째 문장입니다. 천천히 정확하게 입력해보세요.",
-    "두 번째 문장입니다. 이제 속도를 조금 올려볼까요?",
-    "마지막 문장입니다. 최선을 다해 입력해주세요!"
-  ];
-  return sentences;
-};
+// 활성 연결 관리
+const activeConnections = new Map();
 
 const rooms = new Map();
 
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
+  
+  // 연결 관리에 추가
+  activeConnections.set(socket.id, {
+    lastActive: Date.now(),
+    reconnectAttempts: 0
+  });
+
+  // 클라이언트 상태 모니터링
+  const heartbeat = setInterval(() => {
+    socket.emit('heartbeat');
+  }, 5000);
+
+  socket.on('heartbeat-response', () => {
+    if (activeConnections.has(socket.id)) {
+      activeConnections.get(socket.id).lastActive = Date.now();
+      activeConnections.get(socket.id).reconnectAttempts = 0;
+    }
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('Client disconnected:', socket.id, 'Reason:', reason);
+    clearInterval(heartbeat);
+    
+    // 재연결 시도 중인 소켓 정보 유지
+    if (reason === 'transport close' || reason === 'ping timeout') {
+      setTimeout(() => {
+        if (activeConnections.has(socket.id)) {
+          const connection = activeConnections.get(socket.id);
+          if (connection.reconnectAttempts < 5) {
+            connection.reconnectAttempts++;
+            activeConnections.set(socket.id, connection);
+          } else {
+            activeConnections.delete(socket.id);
+            const room = Array.from(rooms.entries()).find(([_, r]) => 
+              r.players.some(p => p.id === socket.id)
+            );
+            if (room) {
+              handlePlayerDisconnect(room[0], socket.id);
+            }
+          }
+        }
+      }, 5000);
+    } else {
+      activeConnections.delete(socket.id);
+      const room = Array.from(rooms.entries()).find(([_, r]) => 
+        r.players.some(p => p.id === socket.id)
+      );
+      if (room) {
+        handlePlayerDisconnect(room[0], socket.id);
+      }
+    }
+  });
 
   socket.on('create-room', () => {
     const roomId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -274,25 +273,92 @@ io.on('connection', (socket) => {
       }
     }
   });
+});
 
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-    for (const [roomId, room] of rooms.entries()) {
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
-      if (playerIndex !== -1) {
-        room.players.splice(playerIndex, 1);
-        if (room.players.length === 0) {
-          rooms.delete(roomId);
-        } else {
-          room.gameStatus = 'waiting';
-          io.to(roomId).emit('player-left');
-          io.to(roomId).emit('player-update', { players: room.players });
-        }
-        break;
+// 연결 관리 함수
+function handlePlayerDisconnect(roomId, playerId) {
+  const room = rooms.get(roomId);
+  if (room) {
+    room.players = room.players.filter(p => p.id !== playerId);
+    if (room.players.length === 0) {
+      rooms.delete(roomId);
+    } else {
+      rooms.set(roomId, room);
+      io.to(roomId).emit('player-left', playerId);
+    }
+  }
+}
+
+// 비활성 연결 정리
+setInterval(() => {
+  const now = Date.now();
+  activeConnections.forEach((connection, socketId) => {
+    if (now - connection.lastActive > 30000) { // 30초 동안 응답 없음
+      const socket = io.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.disconnect(true);
       }
+      activeConnections.delete(socketId);
     }
   });
+}, 10000);
+
+// 번역 엔드포인트
+app.get('/translate', async (req, res) => {
+  try {
+    const { text } = req.query;
+    const targetLang = 'en';
+    const encodedText = encodeURI(text);
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
+    
+    const response = await axios.get(url);
+    const translatedText = response.data[0].reduce((acc, curr) => {
+      if (curr[0]) return acc + curr[0];
+      return acc;
+    }, '');
+    
+    res.json({ translatedText });
+  } catch (error) {
+    console.error('Translation error:', error);
+    res.status(500).json({ error: 'Translation failed', details: error.message });
+  }
 });
+
+// POST 라우트
+app.post('/translate', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const targetLang = 'en';
+    const encodedText = encodeURI(text);
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
+    
+    const response = await axios.get(url);
+    const translatedText = response.data[0].reduce((acc, curr) => {
+      if (curr[0]) return acc + curr[0];
+      return acc;
+    }, '');
+    
+    res.json({ translatedText });
+  } catch (error) {
+    console.error('Translation error:', error);
+    res.status(500).json({ error: 'Translation failed', details: error.message });
+  }
+});
+
+// 기본 헬스 체크 엔드포인트
+app.get('/', (req, res) => {
+  res.send('Server is running');
+});
+
+const textGenerator = () => {
+  // 여러 문장 배열 생성
+  const sentences = [
+    "타자 연습의 첫 번째 문장입니다. 천천히 정확하게 입력해보세요.",
+    "두 번째 문장입니다. 이제 속도를 조금 올려볼까요?",
+    "마지막 문장입니다. 최선을 다해 입력해주세요!"
+  ];
+  return sentences;
+};
 
 function calculateOverallProgress(sentenceProgress) {
   if (!sentenceProgress || sentenceProgress.length === 0) return 0;

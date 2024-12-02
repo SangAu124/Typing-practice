@@ -311,7 +311,6 @@ const BattleGame: React.FC = () => {
       console.log('Socket disconnected. Reason:', reason);
       setIsConnected(false);
       
-      // 자동 재연결 시도
       if (reason === 'io server disconnect' || reason === 'transport close') {
         setTimeout(() => {
           console.log('Attempting to reconnect...');
@@ -320,19 +319,28 @@ const BattleGame: React.FC = () => {
       }
     });
 
-    // Keep-alive 핑 응답
-    newSocket.on('ping', () => {
-      newSocket.emit('pong');
+    // Heartbeat 응답
+    newSocket.on('heartbeat', () => {
+      newSocket.emit('heartbeat-response');
     });
 
-    setSocket(newSocket);
+    // 게임 상태 복구
+    newSocket.on('reconnect', () => {
+      console.log('Socket reconnected');
+      if (roomId) {
+        // 재연결 시 게임 상태 복구 요청
+        newSocket.emit('rejoin-room', { roomId });
+      }
+    });
 
-    if (roomIdParam) {
-      newSocket.emit('join-room', { roomId: roomIdParam });
-      setRoomId(roomIdParam);
-    } else {
-      newSocket.emit('create-room');
-    }
+    // 다른 플레이어가 나갔을 때
+    newSocket.on('player-left', (playerId: string) => {
+      setPlayers(prevPlayers => prevPlayers.filter(p => p.id !== playerId));
+      if (gameStatus === 'playing') {
+        // 게임 중 플레이어가 나가면 게임 일시 중지
+        setGameStatus('waiting');
+      }
+    });
 
     newSocket.on('room-created', ({ roomId, sentences }) => {
       setRoomId(roomId);
