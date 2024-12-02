@@ -111,6 +111,7 @@ interface Player {
   progress: number;
   speed: number;
   accuracy: number;
+  rematchReady?: boolean;
 }
 
 const BattleGame: React.FC = () => {
@@ -120,30 +121,27 @@ const BattleGame: React.FC = () => {
   const [userInput, setUserInput] = useState('');
   const [players, setPlayers] = useState<Player[]>([]);
   const [gameStatus, setGameStatus] = useState<'waiting' | 'playing' | 'finished'>('waiting');
+  const [winner, setWinner] = useState<string>('');
+  const [gameStartTime, setGameStartTime] = useState<number>(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    // URL에서 roomId 파라미터 확인
     const params = new URLSearchParams(window.location.search);
     const roomIdParam = params.get('room');
 
-    // Socket.io 연결
     const newSocket = io(process.env.REACT_APP_API_URL || 'http://localhost:4000');
     setSocket(newSocket);
 
     if (roomIdParam) {
-      // 방 참여
       newSocket.emit('join-room', { roomId: roomIdParam });
+      setRoomId(roomIdParam);
     } else {
-      // 새 방 생성
       newSocket.emit('create-room');
     }
 
-    // 이벤트 리스너 설정
     newSocket.on('room-created', ({ roomId, text }) => {
       setRoomId(roomId);
       setText(text);
-      // URL 업데이트
       window.history.pushState({}, '', `?room=${roomId}`);
     });
 
@@ -151,25 +149,39 @@ const BattleGame: React.FC = () => {
       setText(text);
     });
 
+    newSocket.on('player-update', ({ players }: { players: Player[] }) => {
+      setPlayers(players);
+    });
+
     newSocket.on('game-start', () => {
       setGameStatus('playing');
+      setGameStartTime(Date.now());
+      setUserInput('');
       if (inputRef.current) {
         inputRef.current.focus();
       }
     });
 
-    newSocket.on('player-update', ({ players }) => {
-      setPlayers(players);
-    });
-
     newSocket.on('game-over', ({ winner }) => {
       setGameStatus('finished');
-      // 승자 표시 로직 추가
+      setWinner(winner);
     });
 
     newSocket.on('player-left', () => {
-      // 상대방이 나갔을 때 처리
       setGameStatus('waiting');
+      setUserInput('');
+      setText('');
+    });
+
+    newSocket.on('rematch-start', ({ text }) => {
+      setText(text);
+      setUserInput('');
+      setGameStatus('playing');
+      setWinner('');
+      setGameStartTime(Date.now());
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
     });
 
     return () => {
@@ -181,11 +193,9 @@ const BattleGame: React.FC = () => {
     const value = e.target.value;
     setUserInput(value);
 
-    if (socket && roomId) {
-      // 진행률 계산
+    if (socket && roomId && gameStatus === 'playing') {
       const progress = Math.round((value.length / text.length) * 100);
       
-      // 정확도 계산
       let correctChars = 0;
       const minLength = Math.min(value.length, text.length);
       for (let i = 0; i < minLength; i++) {
@@ -193,11 +203,10 @@ const BattleGame: React.FC = () => {
       }
       const accuracy = Math.round((correctChars / value.length) * 100) || 100;
 
-      // 속도 계산 (기존 로직 사용)
-      const player = players.find(p => p.id === socket.id);
-      const speed = player?.speed || 0;
+      const words = value.trim().split(/\s+/).length;
+      const minutes = (Date.now() - gameStartTime) / 60000;
+      const speed = Math.round(words / minutes) || 0;
 
-      // 진행 상황 업데이트
       socket.emit('update-progress', {
         roomId,
         progress,
@@ -205,26 +214,32 @@ const BattleGame: React.FC = () => {
         accuracy
       });
 
-      // 게임 종료 체크
       if (progress === 100) {
-        setGameStatus('finished');
+        socket.emit('game-finished', { roomId });
       }
     }
   };
 
+  const handleRematch = () => {
+    if (socket && roomId) {
+      socket.emit('rematch-request', { roomId });
+    }
+  };
+
   const copyRoomLink = () => {
-    const link = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-    navigator.clipboard.writeText(link);
+    const url = `${window.location.origin}/battle?room=${roomId}`;
+    navigator.clipboard.writeText(url);
   };
 
   return (
     <Container>
       <BattleHeader>
-        {gameStatus === 'waiting' && roomId && (
+        <h2>타자 대결</h2>
+        {roomId && gameStatus === 'waiting' && (
           <ShareLink>
             <input 
               type="text" 
-              value={`${window.location.origin}${window.location.pathname}?room=${roomId}`} 
+              value={`${window.location.origin}/battle?room=${roomId}`} 
               readOnly 
             />
             <button onClick={copyRoomLink}>링크 복사</button>
@@ -236,31 +251,42 @@ const BattleGame: React.FC = () => {
         {players.map((player, index) => (
           <div key={player.id}>
             <PlayerStats>
-              <span>Player {index + 1}</span>
-              <span>Speed: {player.speed} 타/분</span>
-              <span>Accuracy: {player.accuracy}%</span>
+              <span>플레이어 {index + 1}{player.id === socket?.id ? ' (나)' : ''}</span>
+              <span>정확도: {player.accuracy}%</span>
+              <span>속도: {player.speed} WPM</span>
+              {gameStatus === 'finished' && player.rematchReady && (
+                <span>재대결 준비 완료</span>
+              )}
             </PlayerStats>
             <ProgressBar $progress={player.progress} />
           </div>
         ))}
 
-        <TextDisplay>
-          {text}
-        </TextDisplay>
+        {gameStatus === 'waiting' && (
+          <div style={{ textAlign: 'center', margin: '20px 0' }}>
+            상대방을 기다리는 중...
+          </div>
+        )}
 
-        <Input
-          ref={inputRef}
-          value={userInput}
-          onChange={handleInputChange}
-          disabled={gameStatus !== 'playing'}
-          placeholder={
-            gameStatus === 'waiting' 
-              ? '상대방을 기다리는 중...' 
-              : gameStatus === 'finished'
-              ? '게임 종료!'
-              : '입력을 시작하세요...'
-          }
-        />
+        {(gameStatus === 'playing' || gameStatus === 'finished') && (
+          <>
+            <TextDisplay>{text}</TextDisplay>
+            <Input
+              ref={inputRef}
+              value={userInput}
+              onChange={handleInputChange}
+              disabled={gameStatus === 'finished'}
+              placeholder="여기에 입력하세요..."
+            />
+          </>
+        )}
+
+        {gameStatus === 'finished' && (
+          <div style={{ textAlign: 'center', margin: '20px 0' }}>
+            <h3>{winner === socket?.id ? '승리!' : '패배...'}</h3>
+            <button onClick={handleRematch}>재대결</button>
+          </div>
+        )}
       </BattleArea>
     </Container>
   );
