@@ -3,11 +3,21 @@ const cors = require('cors');
 const axios = require('axios');
 const app = express();
 const http = require('http').createServer(app);
+
+// CORS 미들웨어 설정
+app.use(cors({
+  origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  optionsSuccessStatus: 204
+}));
+
 const io = require('socket.io')(http, {
   cors: {
-    origin: ["http://localhost:3000", "https://typing-practice-seven.vercel.app"],
-    methods: ["GET", "POST"],
+    origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
     transports: ['polling', 'websocket']
   },
   allowEIO3: true,
@@ -15,20 +25,18 @@ const io = require('socket.io')(http, {
   pingInterval: 25000
 });
 
-// CORS 미들웨어 추가
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  next();
-});
-
-app.use(express.json());
-
-// 상태 확인용 엔드포인트
+// 기본 헬스 체크 엔드포인트
 app.get('/', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.send('Server is running');
 });
+
+// OPTIONS 요청 처리
+app.options('*', cors());
+
+app.use(express.json());
 
 // 번역 엔드포인트
 app.get('/translate', async (req, res) => {
