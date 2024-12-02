@@ -2,23 +2,11 @@
   "version": 2,
   "builds": [
     {
-      "src": "typing-practice/server/server.js",
-      "use": "@vercel/node"
-    },
-    {
       "src": "typing-practice/build/**",
       "use": "@vercel/static"
     }
   ],
   "routes": [
-    {
-      "src": "/translate",
-      "dest": "typing-practice/server/server.js"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "typing-practice/server/server.js"
-    },
     {
       "src": "/(.*)",
       "dest": "typing-practice/build/$1"

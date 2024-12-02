@@ -100,11 +100,11 @@ const LanguageToggle = styled.div`
   gap: 10px;
 `;
 
-const ToggleButton = styled.button<{ isActive: boolean }>`
+const ToggleButton = styled.button<{ $isActive?: boolean }>`
   padding: 8px 16px;
   border: 2px solid var(--accent-primary);
-  background: ${props => props.isActive ? 'var(--accent-primary)' : 'transparent'};
-  color: ${props => props.isActive ? 'var(--bg-primary)' : 'var(--accent-primary)'};
+  background: ${props => props.$isActive ? 'var(--accent-primary)' : 'transparent'};
+  color: ${props => props.$isActive ? 'var(--bg-primary)' : 'var(--accent-primary)'};
   border-radius: 4px;
   cursor: pointer;
   font-weight: bold;
@@ -137,9 +137,10 @@ const TypingGame: React.FC = () => {
 
   const translateText = async (text: string): Promise<string> => {
     try {
-      const response = await axios.post('/translate', {
-        text
-      });
+      const encodedText = encodeURI(text);
+      const response = await axios.get(
+        `${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/translate?text=${encodedText}`
+      );
       return response.data.translatedText;
     } catch (error) {
       console.error('Translation error:', error);
@@ -291,13 +292,13 @@ const TypingGame: React.FC = () => {
     <Container>
       <LanguageToggle>
         <ToggleButton
-          isActive={language === 'ko'}
+          $isActive={language === 'ko'}
           onClick={() => setLanguage('ko')}
         >
           한글
         </ToggleButton>
         <ToggleButton
-          isActive={language === 'en'}
+          $isActive={language === 'en'}
           onClick={() => setLanguage('en')}
         >
           English
