@@ -253,11 +253,15 @@ interface Player {
   rematchReady?: boolean;
 }
 
+interface BattleGameProps {
+  roomId?: string;
+}
+
 const SOCKET_SERVER_URL = process.env.NODE_ENV === 'development' ? 'http://localhost:4000' : process.env.REACT_APP_API_URL;
 
-const BattleGame: React.FC = () => {
+const BattleGame: React.FC<BattleGameProps> = ({ roomId: initialRoomId }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [roomId, setRoomId] = useState<string>('');
+  const [roomId, setRoomId] = useState<string | null>(initialRoomId || null);
   const [sentences, setSentences] = useState<string[]>([]);
   const [userInput, setUserInput] = useState('');
   const [players, setPlayers] = useState<Player[]>([]);
@@ -270,7 +274,7 @@ const BattleGame: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const roomIdParam = params.get('room');
+    const roomIdParam = params.get('room') || initialRoomId;
 
     const newSocket = io(SOCKET_SERVER_URL, {
       withCredentials: true,
