@@ -2,27 +2,32 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const app = express();
-const server = require('http').createServer(app);
-const io = require('socket.io')(server, {
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, {
   cors: {
-    origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
+    origin: ["http://localhost:3000", "https://typing-practice-seven.vercel.app"],
+    methods: ["GET", "POST"],
+    credentials: true,
+    transports: ['polling', 'websocket']
+  },
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
-// CORS 설정을 더 구체적으로 지정
-app.use(cors({
-  origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
+// CORS 미들웨어 추가
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+});
 
 app.use(express.json());
 
 // 상태 확인용 엔드포인트
 app.get('/', (req, res) => {
-  res.json({ status: 'Server is running' });
+  res.send('Server is running');
 });
 
 // 번역 엔드포인트
@@ -285,6 +290,6 @@ function calculateOverallProgress(sentenceProgress) {
 }
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
+http.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
