@@ -7,7 +7,13 @@ const axios = require('axios');
 const app = express();
 const server = createServer(app);
 
-// CORS 설정 업데이트
+// 에러 핸들링 미들웨어
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal Server Error', details: err.message });
+});
+
+// CORS 설정
 const allowedOrigins = [
   'https://typing-practice-front-end.vercel.app',
   'http://localhost:3000',
@@ -20,6 +26,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn('Blocked by CORS:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -29,13 +36,51 @@ app.use(cors({
 
 app.use(express.json());
 
-// Socket.IO 서버 설정 최적화
+// 파파고 번역 API 엔드포인트
+app.post('/api/translate', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const clientId = process.env.PAPAGO_CLIENT_ID;
+    const clientSecret = process.env.PAPAGO_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      throw new Error('Papago API credentials not configured');
+    }
+
+    const response = await axios({
+      method: 'POST',
+      url: 'https://openapi.naver.com/v1/papago/n2mt',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Naver-Client-Id': clientId,
+        'X-Naver-Client-Secret': clientSecret
+      },
+      data: {
+        source: 'ko',
+        target: 'en',
+        text
+      }
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Translation error:', error);
+    res.status(500).json({
+      error: 'Translation failed',
+      details: error.message,
+      response: error.response?.data
+    });
+  }
+});
+
+// Socket.IO 서버 설정
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.warn('Blocked by CORS:', origin);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -50,12 +95,7 @@ const io = new Server(server, {
   pingTimeout: 5000,
   connectTimeout: 45000,
   maxHttpBufferSize: 1e6,
-  allowEIO3: true,
-  path: '/socket.io/',
-  adapter: require('socket.io-adapter')(),
-  perMessageDeflate: {
-    threshold: 1024
-  }
+  path: '/socket.io/'
 });
 
 // 활성 연결 관리
