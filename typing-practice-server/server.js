@@ -2,7 +2,7 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const { translate } = require('@vitalets/google-translate-api');
+const axios = require('axios');
 
 const app = express();
 const server = createServer(app);
@@ -33,7 +33,16 @@ app.use(express.json());
 app.post('/api/translate', async (req, res) => {
   try {
     const { text } = req.body;
-    const { text: translatedText } = await translate(text, { to: 'en' });
+    const targetLang = 'en';
+    const encodedText = encodeURI(text);
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${targetLang}&dt=t&q=${encodedText}`;
+    
+    const response = await axios.get(url);
+    const translatedText = response.data[0].reduce((acc, curr) => {
+      if (curr[0]) return acc + curr[0];
+      return acc;
+    }, '');
+    
     res.json({ translatedText });
   } catch (error) {
     console.error('Translation error:', error);
@@ -44,11 +53,12 @@ app.post('/api/translate', async (req, res) => {
 // Socket.IO 서버 설정
 const io = new Server(server, {
   cors: {
-    origin: '*', // Vercel 환경에서는 모든 origin 허용
+    origin: '*',
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling'],
+  path: '/socket.io/',
+  transports: ['polling', 'websocket'],
   allowUpgrades: true,
   upgradeTimeout: 10000,
   pingInterval: 25000,
@@ -64,22 +74,27 @@ io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
   let currentRoom = null;
 
-  // 연결 상태 확인
-  const interval = setInterval(() => {
-    if (socket.connected) {
-      socket.emit('ping');
-    }
-  }, 25000);
-
   socket.on('create-room', () => {
     try {
       const roomId = Math.random().toString(36).substring(7);
       currentRoom = roomId;
       socket.join(roomId);
+      
+      const sentences = generateSentences();
       rooms.set(roomId, {
-        players: [{ id: socket.id, ready: false }],
-        sentences: generateSentences()
+        players: [{ 
+          id: socket.id,
+          ready: false,
+          progress: 0,
+          speed: 0,
+          accuracy: 100,
+          currentSentence: 0,
+          sentenceProgress: Array(sentences.length).fill(0),
+          overallProgress: 0
+        }],
+        sentences
       });
+      
       socket.emit('room-created', {
         roomId,
         sentences: rooms.get(roomId).sentences
@@ -97,14 +112,27 @@ io.on('connection', (socket) => {
       if (room && room.players.length < 2) {
         currentRoom = roomId;
         socket.join(roomId);
-        room.players.push({ id: socket.id, ready: false });
+        
+        room.players.push({ 
+          id: socket.id,
+          ready: false,
+          progress: 0,
+          speed: 0,
+          accuracy: 100,
+          currentSentence: 0,
+          sentenceProgress: Array(room.sentences.length).fill(0),
+          overallProgress: 0
+        });
+        
         socket.emit('room-joined', {
           roomId,
           sentences: room.sentences
         });
+        
         io.to(roomId).emit('player-joined', {
           players: room.players
         });
+        
         console.log('Player joined room:', roomId);
       } else {
         socket.emit('error', { message: 'Room not found or full' });
@@ -126,6 +154,9 @@ io.on('connection', (socket) => {
             if (room.players.every(p => p.ready)) {
               io.to(currentRoom).emit('game-start');
             }
+            io.to(currentRoom).emit('player-update', {
+              players: room.players
+            });
           }
         }
       }
@@ -137,7 +168,16 @@ io.on('connection', (socket) => {
   socket.on('progress-update', (data) => {
     try {
       if (currentRoom) {
-        socket.to(currentRoom).emit('opponent-progress', data);
+        const room = rooms.get(currentRoom);
+        if (room) {
+          const player = room.players.find(p => p.id === socket.id);
+          if (player) {
+            Object.assign(player, data);
+            io.to(currentRoom).emit('player-update', {
+              players: room.players
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Error in progress-update:', error);
@@ -146,7 +186,6 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     try {
-      clearInterval(interval);
       if (currentRoom) {
         const room = rooms.get(currentRoom);
         if (room) {
