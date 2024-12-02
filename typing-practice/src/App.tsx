@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import TypingGame from './components/TypingGame';
 import BattleGame from './components/BattleGame';
@@ -38,6 +38,19 @@ const Nav = styled.nav`
   }
 `;
 
+// URL 파라미터를 확인하는 컴포넌트
+const RoomRedirect: React.FC = () => {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const roomId = params.get('room');
+
+  if (roomId) {
+    return <Navigate to={`/battle${location.search}`} replace />;
+  }
+
+  return <TypingGame />;
+};
+
 const App: React.FC = () => {
   return (
     <Router>
@@ -50,7 +63,7 @@ const App: React.FC = () => {
           </ul>
         </Nav>
         <Routes>
-          <Route path="/" element={<TypingGame />} />
+          <Route path="/" element={<RoomRedirect />} />
           <Route path="/battle" element={<BattleGame />} />
         </Routes>
       </Container>

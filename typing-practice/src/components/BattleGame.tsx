@@ -274,39 +274,48 @@ const BattleGame: React.FC = () => {
 
     const newSocket = io(SOCKET_SERVER_URL, {
       withCredentials: true,
-      transports: ['polling'],
-      path: '/socket.io/',
+      transports: ['websocket', 'polling'],
+      upgrade: true,
       reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 45000,
-      forceNew: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 2000,
+      timeout: 5000,
       autoConnect: true
     });
+
+    setSocket(newSocket);
 
     // Socket 연결 시도
     try {
       newSocket.connect();
     } catch (error) {
-      console.error('Socket connection attempt failed:', error);
+      console.error('Socket connection error:', error);
     }
 
-    // Socket 연결 디버깅
+    // Socket 연결 이벤트
     newSocket.on('connect', () => {
-      console.log('Socket connected successfully:', newSocket.id);
+      console.log('Socket connected, joining/creating room...');
       setIsConnected(true);
+      
+      // 방 생성 또는 참여
+      if (roomIdParam) {
+        newSocket.emit('join-room', { roomId: roomIdParam });
+        setRoomId(roomIdParam);
+      } else {
+        newSocket.emit('create-room');
+      }
     });
 
-    newSocket.on('connect_error', (error: Error) => {
-      console.error('Socket connection error details:', {
-        message: error.message,
-        name: error.name,
-        stack: error.stack
-      });
-      setIsConnected(false);
+    // 방 생성 성공 이벤트
+    newSocket.on('room-created', ({ roomId: newRoomId, sentences: newSentences }) => {
+      console.log('Room created:', newRoomId);
+      setRoomId(newRoomId);
+      setSentences(newSentences);
+      window.history.pushState({}, '', `?room=${newRoomId}`);
     });
 
+    // Socket 연결 디버깅
     newSocket.on('disconnect', (reason: string) => {
       console.log('Socket disconnected. Reason:', reason);
       setIsConnected(false);
@@ -340,12 +349,6 @@ const BattleGame: React.FC = () => {
         // 게임 중 플레이어가 나가면 게임 일시 중지
         setGameStatus('waiting');
       }
-    });
-
-    newSocket.on('room-created', ({ roomId, sentences }) => {
-      setRoomId(roomId);
-      setSentences(sentences);
-      window.history.pushState({}, '', `?room=${roomId}`);
     });
 
     newSocket.on('room-joined', ({ sentences }) => {
@@ -397,65 +400,6 @@ const BattleGame: React.FC = () => {
     };
   }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setUserInput(value);
-
-    if (socket && roomId && gameStatus === 'playing' && currentSentence < sentences.length) {
-      const currentText = sentences[currentSentence];
-      const progress = Math.round((value.length / currentText.length) * 100);
-      
-      let correctChars = 0;
-      const minLength = Math.min(value.length, currentText.length);
-      for (let i = 0; i < minLength; i++) {
-        if (value[i] === currentText[i]) correctChars++;
-      }
-      const accuracy = Math.round((correctChars / value.length) * 100) || 100;
-
-      const words = value.trim().split(/\s+/).length;
-      const minutes = (Date.now() - gameStartTime) / 60000;
-      const speed = Math.round(words / minutes) || 0;
-
-      // 진행도 업데이트
-      socket.emit('update-progress', {
-        roomId,
-        progress,
-        speed,
-        accuracy,
-        currentSentence
-      });
-
-      // 디버깅용 로그
-      console.log('Progress update sent:', {
-        progress,
-        currentSentence,
-        speed,
-        accuracy
-      });
-
-      // 현재 문장을 완료했을 때
-      if (value === currentText) {
-        socket.emit('sentence-completed', { 
-          roomId,
-          sentenceIndex: currentSentence
-        });
-
-        // 다음 문장으로 이동
-        if (currentSentence < sentences.length - 1) {
-          setCurrentSentence(prev => prev + 1);
-          setUserInput('');
-        } else {
-          // 모든 문장 완료
-          socket.emit('game-finished', { 
-            roomId,
-            speed,
-            accuracy
-          });
-        }
-      }
-    }
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
       e.preventDefault();
@@ -487,7 +431,10 @@ const BattleGame: React.FC = () => {
               value={`${window.location.origin}?room=${roomId}`} 
               readOnly 
             />
-            <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}?room=${roomId}`)}>
+            <button onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}?room=${roomId}`);
+              alert('링크가 복사되었습니다!');
+            }}>
               링크 복사
             </button>
           </ShareLink>
@@ -538,7 +485,41 @@ const BattleGame: React.FC = () => {
             <Input
               ref={inputRef}
               value={userInput}
-              onChange={handleInputChange}
+              onChange={(e) => {
+                const value = e.target.value;
+                setUserInput(value);
+                if (socket && roomId && gameStatus === 'playing') {
+                  const currentText = sentences[currentSentence];
+                  const progress = Math.round((value.length / currentText.length) * 100);
+                  
+                  const minLength = Math.min(value.length, currentText.length);
+                  const correctChars = Array.from(value).reduce((acc, char, i) => 
+                    acc + (i < minLength && char === currentText[i] ? 1 : 0), 0);
+                  const accuracy = Math.round((correctChars / value.length) * 100) || 100;
+
+                  const words = value.trim().split(/\s+/).length;
+                  const minutes = (Date.now() - gameStartTime) / 60000;
+                  const speed = Math.round(words / minutes) || 0;
+
+                  socket.emit('update-progress', {
+                    roomId,
+                    progress,
+                    speed,
+                    accuracy,
+                    currentSentence
+                  });
+
+                  if (value === currentText) {
+                    socket.emit('sentence-completed', { roomId, sentenceIndex: currentSentence });
+                    if (currentSentence < sentences.length - 1) {
+                      setCurrentSentence(prev => prev + 1);
+                      setUserInput('');
+                    } else {
+                      socket.emit('game-finished', { roomId, speed, accuracy });
+                    }
+                  }
+                }
+              }}
               onPaste={handlePaste}
               onCopy={handleCopy}
               onKeyDown={handleKeyDown}

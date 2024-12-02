@@ -1,36 +1,37 @@
 const express = require('express');
-const app = express();
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
-const http = require('http');
-const server = http.createServer(app);
-const { Server } = require("socket.io");
 const axios = require('axios');
+
+const app = express();
+const server = createServer(app);
 
 // CORS 미들웨어 설정
 app.use(cors({
   origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST'],
   credentials: true
 }));
 
 app.use(express.json());
 
+// Socket.IO 서버 설정
 const io = new Server(server, {
   cors: {
     origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
     methods: ['GET', 'POST'],
-    credentials: true,
-    allowedHeaders: ['Content-Type']
+    credentials: true
   },
-  path: '/socket.io/',
-  transports: ['polling'],
-  pingInterval: 10000,
-  pingTimeout: 5000,
-  connectTimeout: 45000,
-  allowUpgrades: false,
-  cookie: false,
-  maxHttpBufferSize: 1e8,
-  cleanupEmptyChildNamespaces: true
+  transports: ['websocket', 'polling'],
+  pingInterval: 5000,
+  pingTimeout: 3000,
+  connectTimeout: 10000,
+  maxHttpBufferSize: 1e6,
+  allowUpgrades: true,
+  perMessageDeflate: {
+    threshold: 1024
+  }
 });
 
 // 활성 연결 관리
