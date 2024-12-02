@@ -30,7 +30,7 @@ app.use(cors({
 app.use(express.json());
 
 // 번역 API 엔드포인트
-app.post('/api/translate', async (req, res) => {
+app.post('/translate', async (req, res) => {
   try {
     const { text } = req.body;
     const targetLang = 'en';
