@@ -137,9 +137,15 @@ const TypingGame: React.FC = () => {
 
   const translateText = async (text: string): Promise<string> => {
     try {
+      // 개발 환경에서는 항상 localhost 사용
+      const apiUrl = process.env.NODE_ENV === 'development' 
+        ? 'http://localhost:4000'
+        : process.env.REACT_APP_API_URL || 'https://typing-practice-server-prod.vercel.app';
+
       const response = await axios.post(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:4000'}/translate`,
-        { text }
+        `${apiUrl}/translate`,
+        { text },
+        { withCredentials: true }  // CORS 인증 추가
       );
       return response.data.translatedText;
     } catch (error) {

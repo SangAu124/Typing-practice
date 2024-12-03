@@ -257,7 +257,10 @@ interface BattleGameProps {
   roomId?: string;
 }
 
-const SOCKET_SERVER_URL = process.env.NODE_ENV === 'development' ? 'http://localhost:4000' : process.env.REACT_APP_API_URL;
+// 개발 환경에서는 항상 localhost를 사용하도록 수정
+const SOCKET_SERVER_URL = process.env.NODE_ENV === 'development' 
+  ? 'http://localhost:4000'
+  : (process.env.REACT_APP_API_URL || 'https://typing-practice-server-prod.vercel.app');
 
 const BattleGame: React.FC<BattleGameProps> = ({ roomId: initialRoomId }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -278,14 +281,14 @@ const BattleGame: React.FC<BattleGameProps> = ({ roomId: initialRoomId }) => {
 
     const newSocket = io(SOCKET_SERVER_URL, {
       withCredentials: true,
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'],
       upgrade: true,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
-      autoConnect: true,
+      autoConnect: false,
       path: '/socket.io/',
       forceNew: true,
       query: roomIdParam ? { room: roomIdParam } : undefined

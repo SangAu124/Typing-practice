@@ -4,11 +4,25 @@ const axios = require('axios');
 const app = express();
 
 // CORS 설정을 더 구체적으로 지정
-app.use(cors({
-  origin: ['https://typing-practice-front-end.vercel.app', 'http://localhost:3000'],
+const corsOptions = {
+  origin: function(origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'https://typing-practice-front-end.vercel.app'
+    ];
+    // origin이 undefined인 경우는 같은 도메인에서의 요청
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST'],
-  credentials: true
-}));
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
